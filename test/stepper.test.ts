@@ -29,3 +29,26 @@ describe("Stepper linear walk", () => {
     expect(s.status().atEnd).toBe(true);
   });
 });
+
+describe("Stepper nested subworkflow", () => {
+  it("descends into the child at its start and shares context", () => {
+    const s = new Stepper(join(FIX, "parent.canvas"));
+    expect(s.current().kind).toBe("start");      // parent start
+    s.advance({ outputs: { fromParent: 1 } });   // parent start -> sub (descends)
+    const cur = s.current();
+    expect(cur.kind).toBe("start");              // child start
+    expect(s.status().depth).toBe(2);
+    expect(s.context().fromParent).toBe(1);      // shared bag
+  });
+
+  it("pops back to the parent after the child end and finishes", () => {
+    const s = new Stepper(join(FIX, "parent.canvas"));
+    s.advance();   // parent start -> descend into child start
+    s.advance();   // child start -> child end
+    expect(s.current().kind).toBe("end");        // child end
+    s.advance();   // child end -> pop -> parent end
+    expect(s.current().kind).toBe("end");        // parent end
+    expect(s.status().depth).toBe(1);
+    expect(s.status().atEnd).toBe(true);
+  });
+});

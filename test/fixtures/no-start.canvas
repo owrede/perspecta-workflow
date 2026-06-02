@@ -1,0 +1,6 @@
+{
+  "nodes": [
+    { "id": "e", "type": "file", "file": "end-note.md", "x": 0, "y": 0, "width": 200, "height": 60 }
+  ],
+  "edges": []
+}

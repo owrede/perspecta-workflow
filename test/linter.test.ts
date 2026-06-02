@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { buildGraph } from "../src/graph.js";
-import { lint, isInfiniteLoop } from "../src/linter.js";
+import { lint, isInfiniteLoop, applyColors } from "../src/linter.js";
+import { parseCanvas } from "../src/canvas.js";
+import { copyFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const FIX = join(import.meta.dirname, "fixtures");
 const lintFile = (f: string) => lint(buildGraph(join(FIX, f)));
@@ -40,5 +43,23 @@ describe("embed rule: infinite loop forbidden in embedded workflow", () => {
     const err = r.errors.find((e) => e.rule === "infinite-loop-in-embedded");
     expect(err).toBeDefined();
     expect(err!.message).toContain("infinite-child.canvas");
+  });
+});
+
+describe("applyColors", () => {
+  it("rewrites canvas node colors from node_type", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pw-"));
+    for (const f of ["start-note.md", "prompt-note.md", "end-note.md"]) {
+      copyFileSync(join(FIX, f), join(dir, f));
+    }
+    const canvasPath = join(dir, "linear.canvas");
+    copyFileSync(join(FIX, "linear.canvas"), canvasPath);
+
+    const changed = applyColors(buildGraph(canvasPath), canvasPath);
+    expect(changed).toBeGreaterThan(0);
+
+    const after = parseCanvas(canvasPath);
+    const start = after.nodes.find((n) => n.id === "s")!;
+    expect(start.color).toBe("4"); // green per NODE_COLORS.start
   });
 });

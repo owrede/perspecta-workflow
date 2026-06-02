@@ -1,4 +1,5 @@
-import type { WorkflowGraph, NodeType } from "./types.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { NODE_COLORS, NODE_COLOR_HEX, type WorkflowGraph, type NodeType } from "./types.js";
 import { buildGraph } from "./graph.js";
 
 export interface LintError { rule: string; message: string; nodeId?: string; }
@@ -79,6 +80,25 @@ export function lint(graph: WorkflowGraph): LintResult {
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+/** Rewrite each workflow node's canvas color from its node_type. Returns count changed. */
+export function applyColors(graph: WorkflowGraph, canvasPath: string): number {
+  const raw = JSON.parse(readFileSync(canvasPath, "utf8"));
+  let changed = 0;
+  for (const cn of raw.nodes ?? []) {
+    const wf = graph.nodes.get(cn.id);
+    if (!wf || wf.kind === "subworkflow") continue;
+    const hex = NODE_COLOR_HEX[wf.kind as NodeType];
+    const preset = NODE_COLORS[wf.kind as NodeType];
+    const desired = hex ?? preset;
+    if (desired && cn.color !== desired) {
+      cn.color = desired;
+      changed++;
+    }
+  }
+  if (changed > 0) writeFileSync(canvasPath, JSON.stringify(raw, null, 2) + "\n", "utf8");
+  return changed;
 }
 
 export function isInfiniteLoop(graph: WorkflowGraph, loopNodeId: string): boolean {

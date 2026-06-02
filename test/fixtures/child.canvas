@@ -1,0 +1,7 @@
+{
+  "nodes": [
+    { "id": "cs", "type": "file", "file": "start-note.md", "x": 0,   "y": 0, "width": 200, "height": 60 },
+    { "id": "ce", "type": "file", "file": "end-note.md",   "x": 300, "y": 0, "width": 200, "height": 60 }
+  ],
+  "edges": [ { "id": "ce1", "fromNode": "cs", "toNode": "ce" } ]
+}

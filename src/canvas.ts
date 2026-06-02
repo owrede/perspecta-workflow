@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import type { Canvas, WorkflowNodeFrontmatter } from "./types.js";

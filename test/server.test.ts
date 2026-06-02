@@ -25,4 +25,11 @@ describe("MCP handlers", () => {
     const cur = await handlers.workflow_current({ session: started.session! });
     expect(cur.kind).toBe("prompt");
   });
+
+  it("workflow_current rejects on an unknown session", async () => {
+    resetSessions();
+    await expect(
+      handlers.workflow_current({ session: "does-not-exist" }),
+    ).rejects.toThrow("Unknown session");
+  });
 });

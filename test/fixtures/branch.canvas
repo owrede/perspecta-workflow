@@ -1,0 +1,13 @@
+{
+  "nodes": [
+    { "id": "s",  "type": "file", "file": "start-note.md",  "x": 0,   "y": 0,   "width": 200, "height": 60 },
+    { "id": "b",  "type": "file", "file": "branch-note.md", "x": 300, "y": 0,   "width": 200, "height": 60 },
+    { "id": "ey", "type": "file", "file": "end-note.md",    "x": 600, "y": -100,"width": 200, "height": 60 },
+    { "id": "en", "type": "file", "file": "end-note.md",    "x": 600, "y": 100, "width": 200, "height": 60 }
+  ],
+  "edges": [
+    { "id": "e0", "fromNode": "s", "toNode": "b" },
+    { "id": "e1", "fromNode": "b", "toNode": "ey", "label": "yes" },
+    { "id": "e2", "fromNode": "b", "toNode": "en", "label": "no" }
+  ]
+}

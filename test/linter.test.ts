@@ -36,6 +36,32 @@ describe("loop classification", () => {
   });
 });
 
+describe("loop classification — bounded case", () => {
+  it("classifies a conditioned loop with a labeled exit as NOT infinite", () => {
+    const g = buildGraph(join(FIX, "bounded-loop-child.canvas"));
+    expect(isInfiniteLoop(g, "cl")).toBe(false);
+  });
+});
+
+describe("structural rules — dead ends and branch labels", () => {
+  it("flags a non-end node with no outgoing edge (no-dead-ends)", () => {
+    const r = lintFile("dead-end.canvas");
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.rule === "no-dead-ends")).toBe(true);
+  });
+
+  it("flags duplicate branch labels (distinct-branch-labels)", () => {
+    const r = lintFile("dup-labels.canvas");
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.rule === "distinct-branch-labels")).toBe(true);
+  });
+
+  it("passes a branch with two distinct labels (positive control)", () => {
+    const r = lintFile("branch.canvas");
+    expect(r.ok).toBe(true);
+  });
+});
+
 describe("embed rule: infinite loop forbidden in embedded workflow", () => {
   it("fails a parent that embeds a child containing an infinite loop", () => {
     const r = lintFile("embeds-infinite.canvas");

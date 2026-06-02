@@ -5,6 +5,7 @@ import { z } from "zod";
 import { buildGraph } from "./graph.js";
 import { lint, applyColors, type LintError } from "./linter.js";
 import { Stepper } from "./stepper.js";
+import { VERSION } from "./index.js";
 
 const sessions = new Map<string, Stepper>();
 export function resetSessions(): void {
@@ -73,7 +74,7 @@ function toContent(result: unknown) {
 }
 
 export function buildServer(): McpServer {
-  const server = new McpServer({ name: "perspecta-workflow", version: "1.0.0" });
+  const server = new McpServer({ name: "perspecta-workflow", version: VERSION });
 
   server.registerTool(
     "workflow_lint",

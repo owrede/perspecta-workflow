@@ -52,3 +52,33 @@ describe("Stepper nested subworkflow", () => {
     expect(s.status().atEnd).toBe(true);
   });
 });
+
+describe("Stepper branch selection", () => {
+  it("exposes two labeled outgoing edges at the branch node", () => {
+    const s = new Stepper(join(FIX, "branch.canvas"));
+    s.advance(); // start -> b (single edge, auto-followed)
+    const cur = s.current();
+    expect(cur.outgoing).toHaveLength(2);
+    expect(cur.outgoing.map((o) => o.label).sort()).toEqual(["no", "yes"]);
+  });
+
+  it("follows the chosen labeled edge to the matching end", () => {
+    const s = new Stepper(join(FIX, "branch.canvas"));
+    s.advance();                  // start -> b
+    s.advance({ edge: "yes" });   // b -> ey
+    expect(s.current().kind).toBe("end");
+    expect(s.status().currentId).toBe("ey");
+  });
+
+  it("throws at a branch when no edge label is supplied", () => {
+    const s = new Stepper(join(FIX, "branch.canvas"));
+    s.advance(); // start -> b
+    expect(() => s.advance()).toThrow();
+  });
+
+  it("throws when an unknown edge label is supplied at a branch", () => {
+    const s = new Stepper(join(FIX, "branch.canvas"));
+    s.advance(); // start -> b
+    expect(() => s.advance({ edge: "nope" })).toThrow();
+  });
+});

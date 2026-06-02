@@ -1,0 +1,12 @@
+{
+  "nodes": [
+    { "id": "cs", "type": "file", "file": "start-note.md",        "x": 0,   "y": 0,   "width": 200, "height": 60 },
+    { "id": "cl", "type": "file", "file": "bounded-loop-note.md", "x": 300, "y": 0,   "width": 200, "height": 60 },
+    { "id": "ce", "type": "file", "file": "end-note.md",          "x": 600, "y": 0,   "width": 200, "height": 60 }
+  ],
+  "edges": [
+    { "id": "b1", "fromNode": "cs", "toNode": "cl" },
+    { "id": "b2", "fromNode": "cl", "toNode": "cs", "label": "repeat" },
+    { "id": "b3", "fromNode": "cl", "toNode": "ce", "label": "done" }
+  ]
+}

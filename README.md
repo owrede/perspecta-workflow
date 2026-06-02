@@ -25,6 +25,15 @@ at another `.canvas` is a subworkflow — the stepper descends into it (sharing
 one context bag) and pops back out at the child's end node. Infinite loops are
 forbidden inside embedded workflows.
 
+### Notes
+
+v1 enforces the no-infinite-loops-in-embedded-workflows rule top-down — when a
+parent canvas is linted, its embedded children are scanned recursively. Linting
+a child canvas in isolation does not detect that it is illegally embedded
+elsewhere; the spec's vault-wide inbound "who-embeds-whom" pass is deferred. In
+practice the rule fires whenever you lint the workflow you actually run (the
+parent).
+
 ## Develop
 
     npm install

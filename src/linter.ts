@@ -1,4 +1,5 @@
 import type { WorkflowGraph, NodeType } from "./types.js";
+import { buildGraph } from "./graph.js";
 
 export interface LintError { rule: string; message: string; nodeId?: string; }
 export interface LintResult { ok: boolean; errors: LintError[]; }
@@ -64,7 +65,42 @@ export function lint(graph: WorkflowGraph): LintResult {
     }
   }
 
+  // Rule 7+8: any embedded child must contain no infinite-loop nodes (recursively).
+  for (const n of nodes) {
+    if (n.kind !== "subworkflow" || !n.childCanvasPath) continue;
+    const childInfinites = findInfiniteLoops(n.childCanvasPath);
+    if (childInfinites.length > 0) {
+      errors.push({
+        rule: "infinite-loop-in-embedded",
+        message: `Embedded workflow ${n.childCanvasPath} contains infinite-loop node(s) [${childInfinites.join(", ")}]; embedded workflows must not contain infinite loops.`,
+        nodeId: n.canvasNodeId,
+      });
+    }
+  }
+
   return { ok: errors.length === 0, errors };
+}
+
+export function isInfiniteLoop(graph: WorkflowGraph, loopNodeId: string): boolean {
+  const node = graph.nodes.get(loopNodeId);
+  if (!node || node.kind !== "loop") return false;
+  const out = graph.edges.filter((e) => e.fromId === loopNodeId);
+  const hasCondition = Boolean(node.frontmatter?.condition);
+  return out.length === 1 && !out[0].label && !hasCondition;
+}
+
+function findInfiniteLoops(canvasPath: string): string[] {
+  const child = buildGraph(canvasPath);
+  const found: string[] = [];
+  for (const n of child.nodes.values()) {
+    if (n.kind === "loop" && isInfiniteLoop(child, n.canvasNodeId)) {
+      found.push(n.canvasNodeId);
+    }
+    if (n.kind === "subworkflow" && n.childCanvasPath) {
+      found.push(...findInfiniteLoops(n.childCanvasPath));
+    }
+  }
+  return found;
 }
 
 function reachableFrom(graph: WorkflowGraph, startId: string): Set<string> {

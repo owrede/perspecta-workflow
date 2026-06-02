@@ -1,0 +1,10 @@
+{
+  "nodes": [
+    { "id": "cs", "type": "file", "file": "start-note.md", "x": 0,   "y": 0, "width": 200, "height": 60 },
+    { "id": "cl", "type": "file", "file": "loop-note.md",  "x": 300, "y": 0, "width": 200, "height": 60 }
+  ],
+  "edges": [
+    { "id": "k1", "fromNode": "cs", "toNode": "cl" },
+    { "id": "k2", "fromNode": "cl", "toNode": "cs" }
+  ]
+}

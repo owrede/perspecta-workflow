@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    { "id": "s",   "type": "file", "file": "start-note.md",       "x": 0,   "y": 0, "width": 200, "height": 60 },
+    { "id": "sub", "type": "file", "file": "infinite-child.canvas","x": 300, "y": 0, "width": 200, "height": 60 },
+    { "id": "e",   "type": "file", "file": "end-note.md",         "x": 600, "y": 0, "width": 200, "height": 60 }
+  ],
+  "edges": [
+    { "id": "a1", "fromNode": "s",   "toNode": "sub" },
+    { "id": "a2", "fromNode": "sub", "toNode": "e" }
+  ]
+}

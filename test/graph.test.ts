@@ -20,4 +20,25 @@ describe("buildGraph", () => {
     expect(sub.kind).toBe("subworkflow");
     expect(sub.childCanvasPath!.endsWith("child.canvas")).toBe(true);
   });
+
+  it("auto-detects vault root via .obsidian and resolves vault-relative file paths", () => {
+    const g = buildGraph(join(FIX, "vault-sim", "flows", "vault-relative.canvas"));
+    expect(g.nodes.get("s")!.kind).toBe("start");
+    expect(g.nodes.get("e")!.kind).toBe("end");
+  });
+
+  it("resolves vault-relative file paths with an explicit vaultRoot option", () => {
+    const g = buildGraph(join(FIX, "vault-sim", "flows", "vault-relative.canvas"), {
+      vaultRoot: join(FIX, "vault-sim"),
+    });
+    expect(g.nodes.get("s")!.kind).toBe("start");
+    expect(g.nodes.get("e")!.kind).toBe("end");
+  });
+
+  it("stays backward compatible: canvas-relative paths still resolve", () => {
+    const g = buildGraph(join(FIX, "linear.canvas"));
+    expect(g.nodes.get("s")!.kind).toBe("start");
+    expect(g.nodes.get("p")!.kind).toBe("prompt");
+    expect(g.nodes.get("e")!.kind).toBe("end");
+  });
 });

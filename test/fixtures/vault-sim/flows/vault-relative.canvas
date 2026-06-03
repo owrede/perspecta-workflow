@@ -1,0 +1,7 @@
+{
+  "nodes": [
+    { "id": "s", "type": "file", "file": "flows/vr-start.md", "x": 0,   "y": 0, "width": 200, "height": 60 },
+    { "id": "e", "type": "file", "file": "flows/vr-end.md",   "x": 300, "y": 0, "width": 200, "height": 60 }
+  ],
+  "edges": [ { "id": "x", "fromNode": "s", "toNode": "e" } ]
+}

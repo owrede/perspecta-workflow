@@ -20,11 +20,13 @@ export interface AdvanceArgs {
 export class Stepper {
   private stack: Frame[];
   private ctx = new ContextBag();
+  private vaultRoot?: string;
 
-  constructor(canvasPath: string) {
-    const graph = buildGraph(canvasPath);
+  constructor(canvasPath: string, opts: { vaultRoot?: string } = {}) {
+    const graph = buildGraph(canvasPath, opts);
     const start = [...graph.nodes.values()].find((n) => n.kind === "start");
     if (!start) throw new Error(`No start node in ${canvasPath}`);
+    this.vaultRoot = opts.vaultRoot;
     this.stack = [{ graph, currentId: start.canvasNodeId }];
   }
 
@@ -81,7 +83,7 @@ export class Stepper {
       // move cursor onto the subworkflow node first (so a later pop returns to its out-edge)
       this.frame().currentId = chosen.toId;
       // then descend: push a frame for the child at its start node
-      const childGraph = buildGraph(target.childCanvasPath);
+      const childGraph = buildGraph(target.childCanvasPath, { vaultRoot: this.vaultRoot });
       const childStart = [...childGraph.nodes.values()].find((n) => n.kind === "start");
       if (!childStart) throw new Error(`Embedded workflow ${target.childCanvasPath} has no start node`);
       this.stack.push({ graph: childGraph, currentId: childStart.canvasNodeId });

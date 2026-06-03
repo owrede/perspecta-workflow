@@ -28,6 +28,27 @@ export default class PerspectaWorkflowPlugin extends Plugin {
         }
       },
     });
+
+    this.addCommand({
+      id: "apply-node-colors",
+      name: "Apply node colors",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== "canvas") { new Notice("Not a workflow canvas"); return; }
+        try {
+          const { computeRecoloredCanvas } = await import("./commands/autocolor.js");
+          const out = await computeRecoloredCanvas(file.path, {
+            read: (p: string) => this.app.vault.adapter.read(p),
+            exists: (_p: string) => true,
+          });
+          if (out == null) { new Notice("Colors already up to date"); return; }
+          await this.app.vault.adapter.write(file.path, out);
+          new Notice("Perspecta: node colors applied");
+        } catch (e) {
+          new Notice(`Perspecta: ${(e as Error).message}`);
+        }
+      },
+    });
   }
 
   private async revealResults() {

@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.log
 .mcp.json
+
+# Obsidian plugin build artifact (built fresh for releases — see B8)
+packages/obsidian-plugin/main.js

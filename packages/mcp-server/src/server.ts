@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { buildGraph } from "./graph.js";
-import { lint, applyColors, type LintError } from "./linter.js";
-import { Stepper } from "./stepper.js";
-import { VERSION } from "./index.js";
+import { buildGraph, lint, applyColors, Stepper, VERSION, type LintError } from "@perspecta/core";
+import { NodeFileSystem } from "./NodeFileSystem.js";
+
+const fs = new NodeFileSystem();
 
 const sessions = new Map<string, Stepper>();
 export function resetSessions(): void {
@@ -14,10 +14,10 @@ export function resetSessions(): void {
 
 export const handlers = {
   async workflow_lint({ canvas, fix = false }: { canvas: string; fix?: boolean }) {
-    const graph = buildGraph(canvas);
-    const result = lint(graph);
+    const graph = buildGraph(canvas, { fs });
+    const result = lint(graph, fs);
     let recolored = 0;
-    if (fix && result.ok) recolored = applyColors(graph, canvas);
+    if (fix && result.ok) recolored = applyColors(graph, canvas, fs);
     return { ...result, recolored };
   },
 
@@ -26,11 +26,11 @@ export const handlers = {
   }: {
     canvas: string;
   }): Promise<{ ok: boolean; session?: string; errors?: LintError[] }> {
-    const graph = buildGraph(canvas);
-    const result = lint(graph);
+    const graph = buildGraph(canvas, { fs });
+    const result = lint(graph, fs);
     if (!result.ok) return { ok: false, errors: result.errors };
     const session = randomUUID();
-    sessions.set(session, new Stepper(canvas));
+    sessions.set(session, new Stepper(canvas, { fs }));
     return { ok: true, session };
   },
 

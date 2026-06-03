@@ -1,6 +1,7 @@
 import { buildGraph } from "./graph.js";
 import { ContextBag, resolveTemplate } from "./context.js";
 import type { WorkflowGraph, WorkflowEdge } from "./types.js";
+import type { WorkflowFileSystem } from "./fs.js";
 
 interface Frame { graph: WorkflowGraph; currentId: string; }
 
@@ -20,13 +21,15 @@ export interface AdvanceArgs {
 export class Stepper {
   private stack: Frame[];
   private ctx = new ContextBag();
+  private fs: WorkflowFileSystem;
   private vaultRoot?: string;
 
-  constructor(canvasPath: string, opts: { vaultRoot?: string } = {}) {
-    const graph = buildGraph(canvasPath, opts);
+  constructor(canvasPath: string, opts: { fs: WorkflowFileSystem; vaultRoot?: string }) {
+    this.fs = opts.fs;
+    this.vaultRoot = opts.vaultRoot;
+    const graph = buildGraph(canvasPath, { fs: this.fs, vaultRoot: this.vaultRoot });
     const start = [...graph.nodes.values()].find((n) => n.kind === "start");
     if (!start) throw new Error(`No start node in ${canvasPath}`);
-    this.vaultRoot = opts.vaultRoot;
     this.stack = [{ graph, currentId: start.canvasNodeId }];
   }
 
@@ -83,7 +86,7 @@ export class Stepper {
       // move cursor onto the subworkflow node first (so a later pop returns to its out-edge)
       this.frame().currentId = chosen.toId;
       // then descend: push a frame for the child at its start node
-      const childGraph = buildGraph(target.childCanvasPath, { vaultRoot: this.vaultRoot });
+      const childGraph = buildGraph(target.childCanvasPath, { fs: this.fs, vaultRoot: this.vaultRoot });
       const childStart = [...childGraph.nodes.values()].find((n) => n.kind === "start");
       if (!childStart) throw new Error(`Embedded workflow ${target.childCanvasPath} has no start node`);
       this.stack.push({ graph: childGraph, currentId: childStart.canvasNodeId });

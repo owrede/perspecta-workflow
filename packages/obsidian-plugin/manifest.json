@@ -1,0 +1,9 @@
+{
+  "id": "perspecta-workflow",
+  "name": "Perspecta Workflow",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Author and validate agentic workflow canvases.",
+  "author": "Oliver Wrede",
+  "isDesktopOnly": false
+}

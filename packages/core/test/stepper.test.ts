@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { Stepper } from "../src/stepper.js";
+import { diskFs } from "./helpers.js";
 
 const FIX = join(import.meta.dirname, "fixtures");
 
 describe("Stepper linear walk", () => {
   it("starts at the start node", () => {
-    const s = new Stepper(join(FIX, "linear.canvas"));
+    const s = new Stepper(join(FIX, "linear.canvas"), { fs: diskFs });
     const cur = s.current();
     expect(cur.kind).toBe("start");
     expect(cur.outgoing).toHaveLength(1);
@@ -14,7 +15,7 @@ describe("Stepper linear walk", () => {
   });
 
   it("advances along the only edge and resolves templates", () => {
-    const s = new Stepper(join(FIX, "linear.canvas"));
+    const s = new Stepper(join(FIX, "linear.canvas"), { fs: diskFs });
     s.advance({ outputs: { topic: "the meeting" } }); // from start -> p
     const cur = s.current();
     expect(cur.kind).toBe("prompt");
@@ -22,7 +23,7 @@ describe("Stepper linear walk", () => {
   });
 
   it("reaches the end node and reports done", () => {
-    const s = new Stepper(join(FIX, "linear.canvas"));
+    const s = new Stepper(join(FIX, "linear.canvas"), { fs: diskFs });
     s.advance();                         // start -> p
     s.advance({ outputs: { summary: "x" } }); // p -> e
     expect(s.current().kind).toBe("end");
@@ -32,7 +33,7 @@ describe("Stepper linear walk", () => {
 
 describe("Stepper nested subworkflow", () => {
   it("descends into the child at its start and shares context", () => {
-    const s = new Stepper(join(FIX, "parent.canvas"));
+    const s = new Stepper(join(FIX, "parent.canvas"), { fs: diskFs });
     expect(s.current().kind).toBe("start");      // parent start
     s.advance({ outputs: { fromParent: 1 } });   // parent start -> sub (descends)
     const cur = s.current();
@@ -42,7 +43,7 @@ describe("Stepper nested subworkflow", () => {
   });
 
   it("pops back to the parent after the child end and finishes", () => {
-    const s = new Stepper(join(FIX, "parent.canvas"));
+    const s = new Stepper(join(FIX, "parent.canvas"), { fs: diskFs });
     s.advance();   // parent start -> descend into child start
     s.advance();   // child start -> child end
     expect(s.current().kind).toBe("end");        // child end
@@ -55,7 +56,7 @@ describe("Stepper nested subworkflow", () => {
 
 describe("Stepper branch selection", () => {
   it("exposes two labeled outgoing edges at the branch node", () => {
-    const s = new Stepper(join(FIX, "branch.canvas"));
+    const s = new Stepper(join(FIX, "branch.canvas"), { fs: diskFs });
     s.advance(); // start -> b (single edge, auto-followed)
     const cur = s.current();
     expect(cur.outgoing).toHaveLength(2);
@@ -63,7 +64,7 @@ describe("Stepper branch selection", () => {
   });
 
   it("follows the chosen labeled edge to the matching end", () => {
-    const s = new Stepper(join(FIX, "branch.canvas"));
+    const s = new Stepper(join(FIX, "branch.canvas"), { fs: diskFs });
     s.advance();                  // start -> b
     s.advance({ edge: "yes" });   // b -> ey
     expect(s.current().kind).toBe("end");
@@ -71,13 +72,13 @@ describe("Stepper branch selection", () => {
   });
 
   it("throws at a branch when no edge label is supplied", () => {
-    const s = new Stepper(join(FIX, "branch.canvas"));
+    const s = new Stepper(join(FIX, "branch.canvas"), { fs: diskFs });
     s.advance(); // start -> b
     expect(() => s.advance()).toThrow();
   });
 
   it("throws when an unknown edge label is supplied at a branch", () => {
-    const s = new Stepper(join(FIX, "branch.canvas"));
+    const s = new Stepper(join(FIX, "branch.canvas"), { fs: diskFs });
     s.advance(); // start -> b
     expect(() => s.advance({ edge: "nope" })).toThrow();
   });

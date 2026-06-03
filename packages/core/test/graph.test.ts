@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { buildGraph } from "../src/graph.js";
+import { diskFs } from "./helpers.js";
 
 const FIX = join(import.meta.dirname, "fixtures");
 
 describe("buildGraph", () => {
   it("resolves node-note file-nodes into typed workflow nodes", () => {
-    const g = buildGraph(join(FIX, "linear.canvas"));
+    const g = buildGraph(join(FIX, "linear.canvas"), { fs: diskFs });
     expect(g.nodes.get("s")!.kind).toBe("start");
     expect(g.nodes.get("p")!.kind).toBe("prompt");
     expect(g.nodes.get("p")!.frontmatter!.outputs).toEqual(["summary"]);
@@ -15,20 +16,21 @@ describe("buildGraph", () => {
   });
 
   it("marks a file-node pointing at a .canvas as a subworkflow", () => {
-    const g = buildGraph(join(FIX, "parent.canvas"));
+    const g = buildGraph(join(FIX, "parent.canvas"), { fs: diskFs });
     const sub = g.nodes.get("sub")!;
     expect(sub.kind).toBe("subworkflow");
     expect(sub.childCanvasPath!.endsWith("child.canvas")).toBe(true);
   });
 
   it("auto-detects vault root via .obsidian and resolves vault-relative file paths", () => {
-    const g = buildGraph(join(FIX, "vault-sim", "flows", "vault-relative.canvas"));
+    const g = buildGraph(join(FIX, "vault-sim", "flows", "vault-relative.canvas"), { fs: diskFs });
     expect(g.nodes.get("s")!.kind).toBe("start");
     expect(g.nodes.get("e")!.kind).toBe("end");
   });
 
   it("resolves vault-relative file paths with an explicit vaultRoot option", () => {
     const g = buildGraph(join(FIX, "vault-sim", "flows", "vault-relative.canvas"), {
+      fs: diskFs,
       vaultRoot: join(FIX, "vault-sim"),
     });
     expect(g.nodes.get("s")!.kind).toBe("start");
@@ -36,7 +38,7 @@ describe("buildGraph", () => {
   });
 
   it("stays backward compatible: canvas-relative paths still resolve", () => {
-    const g = buildGraph(join(FIX, "linear.canvas"));
+    const g = buildGraph(join(FIX, "linear.canvas"), { fs: diskFs });
     expect(g.nodes.get("s")!.kind).toBe("start");
     expect(g.nodes.get("p")!.kind).toBe("prompt");
     expect(g.nodes.get("e")!.kind).toBe("end");

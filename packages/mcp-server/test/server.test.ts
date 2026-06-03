@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { handlers, resetSessions } from "../src/server.js";
 
-const FIX = join(import.meta.dirname, "fixtures");
+const FIX = join(import.meta.dirname, "..", "..", "core", "test", "fixtures");
 
 describe("MCP handlers", () => {
   it("workflow_lint returns ok for a valid workflow", async () => {

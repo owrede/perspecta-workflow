@@ -1,0 +1,12 @@
+{
+  "name": "@perspecta/mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "perspecta-workflow": "dist/server.js" },
+  "scripts": { "build": "tsc" },
+  "dependencies": {
+    "@perspecta/core": "*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  }
+}

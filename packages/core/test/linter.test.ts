@@ -3,11 +3,12 @@ import { join } from "node:path";
 import { buildGraph } from "../src/graph.js";
 import { lint, isInfiniteLoop, applyColors } from "../src/linter.js";
 import { parseCanvas } from "../src/canvas.js";
+import { diskFs } from "./helpers.js";
 import { copyFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const FIX = join(import.meta.dirname, "fixtures");
-const lintFile = (f: string) => lint(buildGraph(join(FIX, f)));
+const lintFile = (f: string) => lint(buildGraph(join(FIX, f), { fs: diskFs }), diskFs);
 
 describe("lint structural rules", () => {
   it("passes a valid linear workflow", () => {
@@ -31,14 +32,14 @@ describe("lint structural rules", () => {
 
 describe("loop classification", () => {
   it("classifies a single unlabeled back-edge loop as infinite", () => {
-    const g = buildGraph(join(FIX, "infinite-child.canvas"));
+    const g = buildGraph(join(FIX, "infinite-child.canvas"), { fs: diskFs });
     expect(isInfiniteLoop(g, "cl")).toBe(true);
   });
 });
 
 describe("loop classification — bounded case", () => {
   it("classifies a conditioned loop with a labeled exit as NOT infinite", () => {
-    const g = buildGraph(join(FIX, "bounded-loop-child.canvas"));
+    const g = buildGraph(join(FIX, "bounded-loop-child.canvas"), { fs: diskFs });
     expect(isInfiniteLoop(g, "cl")).toBe(false);
   });
 });
@@ -81,10 +82,10 @@ describe("applyColors", () => {
     const canvasPath = join(dir, "linear.canvas");
     copyFileSync(join(FIX, "linear.canvas"), canvasPath);
 
-    const changed = applyColors(buildGraph(canvasPath), canvasPath);
+    const changed = applyColors(buildGraph(canvasPath, { fs: diskFs }), canvasPath, diskFs);
     expect(changed).toBeGreaterThan(0);
 
-    const after = parseCanvas(canvasPath);
+    const after = parseCanvas(canvasPath, diskFs);
     const start = after.nodes.find((n) => n.id === "s")!;
     expect(start.color).toBe("4"); // green per NODE_COLORS.start
   });

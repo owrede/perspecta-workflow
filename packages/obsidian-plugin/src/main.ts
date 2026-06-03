@@ -2,10 +2,20 @@ import { Plugin, Notice, WorkspaceLeaf } from "obsidian";
 import { VERSION } from "@perspecta/core";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
 import { runValidation } from "./commands/validate.js";
+import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
+import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
 
 export default class PerspectaWorkflowPlugin extends Plugin {
+  settings: PerspectaSettings = DEFAULT_SETTINGS;
+
+  async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
+  async saveSettings() { await this.saveData(this.settings); }
+
   async onload() {
     console.log(`Perspecta Workflow plugin v${VERSION} loaded`);
+
+    await this.loadSettings();
+    this.addSettingTab(new PerspectaSettingTab(this.app, this));
 
     this.registerView(VIEW_TYPE_PERSPECTA, (leaf: WorkspaceLeaf) => new ResultsView(leaf));
 
@@ -47,6 +57,21 @@ export default class PerspectaWorkflowPlugin extends Plugin {
         } catch (e) {
           new Notice(`Perspecta: ${(e as Error).message}`);
         }
+      },
+    });
+
+    this.addCommand({
+      id: "insert-prompt-node",
+      name: "Insert prompt node",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== "canvas") { new Notice("Open a workflow canvas first"); return; }
+        const id = `n${Date.now()}`;
+        const notePath = `${this.settings.nodeFolder}/${id}.md`;
+        await this.app.vault.adapter.write(notePath, buildNodeNote("prompt"));
+        const canvasJson = await this.app.vault.adapter.read(file.path);
+        await this.app.vault.adapter.write(file.path, addFileNodeToCanvas(canvasJson, notePath, id));
+        new Notice("Perspecta: prompt node inserted");
       },
     });
   }

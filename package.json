@@ -1,33 +1,18 @@
 {
   "name": "perspecta-workflow",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "bin": {
-    "perspecta-workflow": "dist/server.js"
-  },
-  "directories": {
-    "doc": "docs"
-  },
-  "scripts": {
-    "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "dev": "tsx src/server.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
+  "version": "0.1.0",
   "type": "module",
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "tsx": "^4.22.4"
   }
 }

@@ -1,0 +1,10 @@
+{
+  "name": "@perspecta/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": "./dist/index.js" },
+  "scripts": { "build": "tsc" },
+  "dependencies": { "yaml": "^2.9.0" }
+}

@@ -1,5 +1,4 @@
 import esbuild from "esbuild";
-import builtins from "builtin-modules";
 
 const watch = process.argv.includes("--watch");
 const ctx = await esbuild.context({
@@ -8,12 +7,7 @@ const ctx = await esbuild.context({
   format: "cjs",
   platform: "browser",
   target: "es2022",
-  external: [
-    "obsidian",
-    "electron",
-    ...builtins,
-    ...builtins.map((m) => `node:${m}`),
-  ],
+  external: ["obsidian", "electron"],
   outfile: "main.js",
   sourcemap: watch ? "inline" : false,
   logLevel: "info",

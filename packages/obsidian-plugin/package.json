@@ -7,5 +7,5 @@
     "dev": "node esbuild.config.mjs --watch"
   },
   "dependencies": { "@perspecta/core": "*" },
-  "devDependencies": { "obsidian": "^1.13.0", "esbuild": "^0.25.0", "builtin-modules": "^5.0.0" }
+  "devDependencies": { "obsidian": "^1.13.0", "esbuild": "^0.25.0" }
 }

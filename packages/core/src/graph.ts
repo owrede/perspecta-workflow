@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { dirname } from "./path.js";
 import { parseCanvas, parseNodeNote } from "./canvas.js";
 import type { WorkflowGraph, WorkflowNode, WorkflowEdge } from "./types.js";
 import type { WorkflowFileSystem } from "./fs.js";

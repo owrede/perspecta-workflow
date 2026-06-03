@@ -21,4 +21,10 @@ describe("dirname (pure, POSIX)", () => {
     expect(dirname("flows/start.md")).toBe("flows");
     expect(dirname("flows")).toBe(".");
   });
+  it("collapses MULTIPLE trailing slashes like node:path", () => {
+    // node: posix.dirname("/a//") === "/", "foo//" === ".", "/trailing///" === "/"
+    expect(dirname("/a//")).toBe("/");
+    expect(dirname("foo//")).toBe(".");
+    expect(dirname("/trailing///")).toBe("/");
+  });
 });

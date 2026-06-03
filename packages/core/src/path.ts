@@ -13,15 +13,17 @@
  *   - "/a/b/c.md"   -> "/a/b"
  *   - "/a"          -> "/"   (last slash at index 0)
  *   - "/"           -> "/"   (path is just the root)
- *   - "/a/b/"       -> "/a"  (single trailing slash collapsed)
+ *   - "/a/b/"       -> "/a"  (trailing slashes collapsed)
+ *   - "/a//"        -> "/"   (ALL trailing slashes collapsed, like node)
  */
 export function dirname(path: string): string {
   if (path.length === 0) return ".";
 
   // A path that is only slashes (e.g. "/") has the root as its dirname.
-  // Strip a single trailing slash, but not if that would empty the path.
+  // Strip ALL trailing slashes (matching node's posix.dirname), but keep at
+  // least the first character so a root-only path doesn't empty out.
   let end = path.length;
-  if (end > 1 && path.charCodeAt(end - 1) === 47 /* "/" */) {
+  while (end > 1 && path.charCodeAt(end - 1) === 47 /* "/" */) {
     end -= 1;
   }
 

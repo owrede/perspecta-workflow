@@ -12,8 +12,12 @@ export interface BuildGraphOptions {
  * Walk up from `startDir` looking for a directory that contains a `.obsidian`
  * folder. The directory CONTAINING `.obsidian` is the vault root. Returns
  * undefined if none is found before reaching the filesystem root.
+ *
+ * `startDir` is used as-is (not pre-normalized): the injected fs owns path
+ * resolution, so `fs.resolve` absolutizes/normalizes as appropriate for its
+ * runtime (node:path for disk, vault-relative keys for Obsidian).
  */
-export function findVaultRoot(
+function findVaultRoot(
   startDir: string,
   fs: WorkflowFileSystem,
 ): string | undefined {
@@ -35,7 +39,7 @@ export function findVaultRoot(
  *   3. Otherwise fall back to the canvas-relative path (preserves existing
  *      missing-file error semantics downstream).
  */
-export function resolveNodeFile(
+function resolveNodeFile(
   canvasDir: string,
   file: string,
   vaultRoot: string | undefined,

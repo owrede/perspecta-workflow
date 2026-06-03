@@ -556,7 +556,10 @@ mkdir -p packages/mcp-server/src packages/mcp-server/test
 git mv src/server.ts packages/mcp-server/src/server.ts
 git mv test/server.test.ts packages/mcp-server/test/server.test.ts
 rmdir src test 2>/dev/null || true
+git rm tsconfig.json
 ```
+NOTE: the old single-package root `tsconfig.json` (rootDir `src`, include `["src"]`) is now stale — `src/` is empty after the move, and a root `tsc` would fail with TS2307 errors. Each package has its own tsconfig; the root no longer needs one. Remove it (the `git rm` above). The root `package.json` `build` script delegates to `--workspaces` only, so nothing depends on a root tsconfig.
+
 Then edit `packages/mcp-server/src/server.ts`:
 - Replace the local imports `import { buildGraph } from "./graph.js"; import { lint, applyColors } from "./linter.js"; import { Stepper } from "./stepper.js";` with: `import { buildGraph, lint, applyColors, Stepper, VERSION } from "@perspecta/core";` and `import { NodeFileSystem } from "./NodeFileSystem.js";`
 - Replace `import { VERSION } from "./index.js";` (delete it; VERSION now comes from @perspecta/core).

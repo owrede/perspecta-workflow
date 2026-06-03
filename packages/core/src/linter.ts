@@ -1,11 +1,11 @@
-import { readFileSync, writeFileSync } from "node:fs";
 import { NODE_COLORS, NODE_COLOR_HEX, type WorkflowGraph, type NodeType } from "./types.js";
 import { buildGraph } from "./graph.js";
+import type { WorkflowFileSystem } from "./fs.js";
 
 export interface LintError { rule: string; message: string; nodeId?: string; }
 export interface LintResult { ok: boolean; errors: LintError[]; }
 
-export function lint(graph: WorkflowGraph): LintResult {
+export function lint(graph: WorkflowGraph, fs: WorkflowFileSystem): LintResult {
   const errors: LintError[] = [];
   const nodes = [...graph.nodes.values()];
 
@@ -69,7 +69,7 @@ export function lint(graph: WorkflowGraph): LintResult {
   // Rule 7+8: any embedded child must contain no infinite-loop nodes (recursively).
   for (const n of nodes) {
     if (n.kind !== "subworkflow" || !n.childCanvasPath) continue;
-    const childInfinites = findInfiniteLoops(n.childCanvasPath);
+    const childInfinites = findInfiniteLoops(n.childCanvasPath, fs);
     if (childInfinites.length > 0) {
       errors.push({
         rule: "infinite-loop-in-embedded",
@@ -83,8 +83,8 @@ export function lint(graph: WorkflowGraph): LintResult {
 }
 
 /** Rewrite each workflow node's canvas color from its node_type. Returns count changed. */
-export function applyColors(graph: WorkflowGraph, canvasPath: string): number {
-  const raw = JSON.parse(readFileSync(canvasPath, "utf8"));
+export function applyColors(graph: WorkflowGraph, canvasPath: string, fs: WorkflowFileSystem): number {
+  const raw = JSON.parse(fs.readText(canvasPath));
   let changed = 0;
   for (const cn of raw.nodes ?? []) {
     const wf = graph.nodes.get(cn.id);
@@ -97,7 +97,7 @@ export function applyColors(graph: WorkflowGraph, canvasPath: string): number {
       changed++;
     }
   }
-  if (changed > 0) writeFileSync(canvasPath, JSON.stringify(raw, null, 2) + "\n", "utf8");
+  if (changed > 0) fs.writeText(canvasPath, JSON.stringify(raw, null, 2) + "\n");
   return changed;
 }
 
@@ -109,15 +109,15 @@ export function isInfiniteLoop(graph: WorkflowGraph, loopNodeId: string): boolea
   return out.length === 1 && !out[0].label && !hasCondition;
 }
 
-function findInfiniteLoops(canvasPath: string): string[] {
-  const child = buildGraph(canvasPath);
+function findInfiniteLoops(canvasPath: string, fs: WorkflowFileSystem): string[] {
+  const child = buildGraph(canvasPath, { fs });
   const found: string[] = [];
   for (const n of child.nodes.values()) {
     if (n.kind === "loop" && isInfiniteLoop(child, n.canvasNodeId)) {
       found.push(n.canvasNodeId);
     }
     if (n.kind === "subworkflow" && n.childCanvasPath) {
-      found.push(...findInfiniteLoops(n.childCanvasPath));
+      found.push(...findInfiniteLoops(n.childCanvasPath, fs));
     }
   }
   return found;

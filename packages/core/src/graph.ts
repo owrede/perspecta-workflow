@@ -1,9 +1,10 @@
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { parseCanvas, parseNodeNote } from "./canvas.js";
 import type { WorkflowGraph, WorkflowNode, WorkflowEdge } from "./types.js";
+import type { WorkflowFileSystem } from "./fs.js";
 
 export interface BuildGraphOptions {
+  fs: WorkflowFileSystem;
   vaultRoot?: string;
 }
 
@@ -12,12 +13,15 @@ export interface BuildGraphOptions {
  * folder. The directory CONTAINING `.obsidian` is the vault root. Returns
  * undefined if none is found before reaching the filesystem root.
  */
-export function findVaultRoot(startDir: string): string | undefined {
-  let dir = resolve(startDir);
+export function findVaultRoot(
+  startDir: string,
+  fs: WorkflowFileSystem,
+): string | undefined {
+  let dir = startDir;
   for (;;) {
-    if (existsSync(resolve(dir, ".obsidian"))) return dir;
+    if (fs.exists(fs.resolve(dir, ".obsidian"))) return dir;
     const parent = dirname(dir);
-    if (parent === dir) return undefined; // reached filesystem root
+    if (parent === dir || parent === "") return undefined; // reached filesystem root
     dir = parent;
   }
 }
@@ -34,29 +38,31 @@ export function findVaultRoot(startDir: string): string | undefined {
 export function resolveNodeFile(
   canvasDir: string,
   file: string,
-  vaultRoot?: string,
+  vaultRoot: string | undefined,
+  fs: WorkflowFileSystem,
 ): string {
-  const canvasRelative = resolve(canvasDir, file);
-  if (existsSync(canvasRelative)) return canvasRelative;
-  if (vaultRoot) {
-    const vaultRelative = resolve(vaultRoot, file);
-    if (existsSync(vaultRelative)) return vaultRelative;
+  const canvasRelative = fs.resolve(canvasDir, file);
+  if (fs.exists(canvasRelative)) return canvasRelative;
+  if (vaultRoot !== undefined) {
+    const vaultRelative = fs.resolve(vaultRoot, file);
+    if (fs.exists(vaultRelative)) return vaultRelative;
   }
   return canvasRelative;
 }
 
 export function buildGraph(
   canvasPath: string,
-  opts: BuildGraphOptions = {},
+  opts: BuildGraphOptions,
 ): WorkflowGraph {
-  const canvas = parseCanvas(canvasPath);
+  const { fs } = opts;
+  const canvas = parseCanvas(canvasPath, fs);
   const baseDir = dirname(canvasPath);
-  const vaultRoot = opts.vaultRoot ?? findVaultRoot(baseDir);
+  const vaultRoot = opts.vaultRoot ?? findVaultRoot(baseDir, fs);
   const nodes = new Map<string, WorkflowNode>();
 
   for (const cn of canvas.nodes) {
     if (cn.type !== "file" || !cn.file) continue; // ignore text/group nodes in v1
-    const target = resolveNodeFile(baseDir, cn.file, vaultRoot);
+    const target = resolveNodeFile(baseDir, cn.file, vaultRoot, fs);
 
     if (cn.file.endsWith(".canvas")) {
       nodes.set(cn.id, {
@@ -68,7 +74,7 @@ export function buildGraph(
       continue;
     }
 
-    const note = parseNodeNote(target);
+    const note = parseNodeNote(target, fs);
     nodes.set(cn.id, {
       canvasNodeId: cn.id,
       kind: note.frontmatter.node_type,

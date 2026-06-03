@@ -188,6 +188,8 @@ git commit -m "refactor: introduce npm workspaces, move core into packages/core"
 **Files:**
 - Create: `packages/core/src/fs.ts`, `packages/core/test/fs.test.ts`
 
+**Design note:** The interface includes a `resolve(canvasDir, file)` method so the FS — not the core — owns path resolution. This is the seam that lets the Node adapter use `node:path` (absolute paths) while the Obsidian adapter keeps vault-relative keys, with NO suffix-match heuristic anywhere.
+
 - [ ] **Step 1: Write the failing test `packages/core/test/fs.test.ts`**
 
 ```typescript
@@ -208,6 +210,11 @@ describe("InMemoryFileSystem", () => {
     const fs = new InMemoryFileSystem();
     expect(() => fs.readText("/nope")).toThrow();
   });
+
+  it("resolves a file path against a base dir by simple join", () => {
+    const fs = new InMemoryFileSystem();
+    expect(fs.resolve("/flows", "start.md")).toBe("/flows/start.md");
+  });
 });
 ```
 
@@ -223,9 +230,12 @@ export interface WorkflowFileSystem {
   readText(path: string): string;
   writeText(path: string, data: string): void;
   exists(path: string): boolean;
+  /** Resolve a node `file` reference (from a canvas) against the canvas's directory.
+   *  The FS owns resolution: Node uses node:path; Obsidian keeps vault-relative keys. */
+  resolve(canvasDir: string, file: string): string;
 }
 
-/** In-memory implementation for tests. */
+/** In-memory implementation for tests. Resolves by simple POSIX-style join. */
 export class InMemoryFileSystem implements WorkflowFileSystem {
   private store = new Map<string, string>();
   constructor(initial: Record<string, string> = {}) {
@@ -238,6 +248,10 @@ export class InMemoryFileSystem implements WorkflowFileSystem {
   }
   writeText(path: string, data: string): void { this.store.set(path, data); }
   exists(path: string): boolean { return this.store.has(path); }
+  resolve(canvasDir: string, file: string): string {
+    if (!canvasDir) return file;
+    return `${canvasDir.replace(/\/$/, "")}/${file}`;
+  }
 }
 ```
 
@@ -266,6 +280,7 @@ git commit -m "feat(core): WorkflowFileSystem interface + in-memory fake"
 Create `packages/core/test/helpers.ts`:
 ```typescript
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { WorkflowFileSystem } from "../src/fs.js";
 
 /** A real-disk fs for tests that use fixture files. */
@@ -273,6 +288,7 @@ export const diskFs: WorkflowFileSystem = {
   readText: (p) => readFileSync(p, "utf8"),
   writeText: (p, d) => writeFileSync(p, d, "utf8"),
   exists: (p) => existsSync(p),
+  resolve: (dir, file) => resolve(dir, file),
 };
 ```
 
@@ -306,9 +322,9 @@ export function parseNodeNote(path: string, fs: WorkflowFileSystem): ParsedNote 
 
 - [ ] **Step 3: Update `packages/core/src/graph.ts`**
 
-Replace the whole file with the fs-injected version:
+Replace the whole file with the fs-injected version. NOTE: `dirname` (computing the canvas's own directory) stays from `node:path` — it's pure string math, runtime-agnostic, and works on vault-relative paths too. Node-FILE resolution goes through `fs.resolve` so each adapter owns it (no suffix-match heuristic). Vault-root detection also uses `fs.resolve` for the `.obsidian` probe.
 ```typescript
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { parseCanvas, parseNodeNote } from "./canvas.js";
 import type { WorkflowGraph, WorkflowNode, WorkflowEdge } from "./types.js";
 import type { WorkflowFileSystem } from "./fs.js";
@@ -318,18 +334,18 @@ export interface BuildGraphOptions { fs: WorkflowFileSystem; vaultRoot?: string;
 function findVaultRoot(startDir: string, fs: WorkflowFileSystem): string | undefined {
   let dir = startDir;
   while (true) {
-    if (fs.exists(resolve(dir, ".obsidian"))) return dir;
+    if (fs.exists(fs.resolve(dir, ".obsidian"))) return dir;
     const parent = dirname(dir);
-    if (parent === dir) return undefined;
+    if (parent === dir || parent === "") return undefined;
     dir = parent;
   }
 }
 
 function resolveNodeFile(canvasDir: string, file: string, vaultRoot: string | undefined, fs: WorkflowFileSystem): string {
-  const canvasRelative = resolve(canvasDir, file);
+  const canvasRelative = fs.resolve(canvasDir, file);
   if (fs.exists(canvasRelative)) return canvasRelative;
-  if (vaultRoot) {
-    const vaultRelative = resolve(vaultRoot, file);
+  if (vaultRoot !== undefined) {
+    const vaultRelative = fs.resolve(vaultRoot, file);
     if (fs.exists(vaultRelative)) return vaultRelative;
   }
   return canvasRelative;
@@ -359,6 +375,7 @@ export function buildGraph(canvasPath: string, opts: BuildGraphOptions): Workflo
   return { canvasPath, nodes, edges };
 }
 ```
+NOTE for the `diskFs` test helper (Task A3 Step 1): it must now ALSO implement `resolve` using `node:path` — see the updated helper code below.
 
 - [ ] **Step 4: Update `packages/core/src/linter.ts`**
 
@@ -520,12 +537,14 @@ git commit -m "feat(core): public barrel export with VERSION"
 
 ```typescript
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { WorkflowFileSystem } from "@perspecta/core";
 
 export class NodeFileSystem implements WorkflowFileSystem {
   readText(path: string): string { return readFileSync(path, "utf8"); }
   writeText(path: string, data: string): void { writeFileSync(path, data, "utf8"); }
   exists(path: string): boolean { return existsSync(path); }
+  resolve(canvasDir: string, file: string): string { return resolve(canvasDir, file); }
 }
 ```
 
@@ -719,8 +738,18 @@ describe("ObsidianFileSystem", () => {
     const fs = new ObsidianFileSystem(new Map());
     expect(() => fs.readText("x")).toThrow();
   });
+
+  it("resolves to vault-relative keys (matching preload), not absolute paths", () => {
+    const fs = new ObsidianFileSystem(new Map());
+    // canvas at flows/wf.canvas -> dirname "flows"; a sibling note "flows/start.md"
+    // is referenced in the canvas as "flows/start.md" (vault-relative), so resolving
+    // against the canvas dir must yield exactly that key.
+    expect(fs.resolve("flows", "flows/start.md")).toBe("flows/start.md");
+    expect(fs.resolve("", "flows/start.md")).toBe("flows/start.md");
+  });
 });
 ```
+**Why `resolve` returns the `file` as-is here:** Obsidian canvas `file` values are ALREADY vault-relative (e.g. `flows/start.md`), and preload keys the map by those exact strings. So resolution is the identity on `file` — the canvasDir is ignored. This is what makes the suffix-match heuristic unnecessary.
 
 - [ ] **Step 2: Run — expect FAIL (module not found)**
 
@@ -733,8 +762,10 @@ Expected: FAIL.
 import type { WorkflowFileSystem } from "@perspecta/core";
 
 /**
- * Synchronous WorkflowFileSystem backed by a preloaded map of file contents.
- * Writes are buffered in-memory; the caller flushes them to the Vault via pendingWrites().
+ * Synchronous WorkflowFileSystem backed by a preloaded map of file contents,
+ * keyed by VAULT-RELATIVE paths (exactly as the canvas references them and as
+ * preload stored them). Writes are buffered in-memory; the caller flushes them
+ * to the Vault via pendingWrites().
  */
 export class ObsidianFileSystem implements WorkflowFileSystem {
   private writes = new Map<string, string>();
@@ -751,6 +782,8 @@ export class ObsidianFileSystem implements WorkflowFileSystem {
     this.files.set(path, data);
   }
   exists(path: string): boolean { return this.files.has(path) || this.writes.has(path); }
+  /** Obsidian canvas `file` values are already vault-relative; identity on `file`. */
+  resolve(_canvasDir: string, file: string): string { return file; }
   pendingWrites(): Map<string, string> { return this.writes; }
 }
 ```
@@ -884,7 +917,7 @@ git commit -m "feat(plugin): async preload of canvas + node-note files into a sy
 **Files:**
 - Create: `packages/obsidian-plugin/src/commands/validate.ts`, `packages/obsidian-plugin/test/validate.test.ts`
 
-**Note on path resolution:** Since preload keys files by their vault-relative paths exactly as the canvas references them, and `buildGraph` resolves with `node:path` against the canvas dir, the plugin passes `vaultRoot: ""` AND the ObsidianFileSystem keys must match what buildGraph computes. To keep this robust in v0.1, `runValidation` builds the graph by giving the core an fs whose keys are the vault-relative paths and a vaultRoot of "" — and because `buildGraph` resolves `resolve(dirname(canvasPath), cn.file)`, the helper normalizes by ALSO storing each file under its resolved key. Implement `runValidation` to feed the core a fs that resolves both forms (see code).
+**Path resolution (clean, no heuristic):** Because `WorkflowFileSystem.resolve` is now owned by the adapter, and `ObsidianFileSystem.resolve` returns the vault-relative `file` as-is, `runValidation` just builds an `ObsidianFileSystem` over the preloaded map and hands it to the core. `buildGraph` calls `fs.resolve(canvasDir, cn.file)` → gets back the vault-relative key → finds it in the map. No suffix-match, no doubled paths. `vaultRoot: ""` is passed so the `.obsidian` auto-walk is skipped (preload already gathered everything).
 
 - [ ] **Step 1: Write the failing test `test/validate.test.ts`**
 
@@ -944,40 +977,18 @@ Expected: FAIL.
 - [ ] **Step 3: Write `src/commands/validate.ts`**
 
 ```typescript
-import { buildGraph, lint, type LintResult, type WorkflowFileSystem } from "@perspecta/core";
+import { buildGraph, lint, type LintResult } from "@perspecta/core";
+import { ObsidianFileSystem } from "../fs/ObsidianFileSystem.js";
 import { preloadCanvas, type VaultReader } from "../fs/preload.js";
-
-/**
- * A fs that resolves both the vault-relative key (as stored by preload) and the
- * node:path-resolved key buildGraph computes. We do this by trying the path as-is,
- * then its basename-joined variants. Simplest robust approach for v0.1: store every
- * preloaded entry under BOTH its original key and its path.resolve("/", key) form.
- */
-function mapFs(map: Map<string, string>): WorkflowFileSystem {
-  return {
-    readText: (p) => {
-      if (map.has(p)) return map.get(p)!;
-      // buildGraph resolves to absolute paths; match by suffix on the vault-relative key
-      for (const [k, v] of map) if (p.endsWith(k)) return v;
-      throw new Error(`Not preloaded: ${p}`);
-    },
-    writeText: (p, d) => { map.set(p, d); },
-    exists: (p) => {
-      if (map.has(p)) return true;
-      for (const k of map.keys()) if (p.endsWith(k)) return true;
-      return false;
-    },
-  };
-}
 
 export async function runValidation(canvasPath: string, vault: VaultReader): Promise<LintResult> {
   const { map } = await preloadCanvas(canvasPath, vault);
-  const fs = mapFs(map);
+  const fs = new ObsidianFileSystem(map);
   const graph = buildGraph(canvasPath, { fs, vaultRoot: "" });
   return lint(graph, fs);
 }
 ```
-NOTE: the suffix-match in `mapFs` is the v0.1 bridge between buildGraph's `node:path`-resolved absolute paths and preload's vault-relative keys. It is exercised by the tests (which use bare relative paths, so `p.endsWith(k)` and direct hits both work). Document this as a known simplification; a cleaner path-normalization is a Phase 1.5 refinement.
+Clean: `ObsidianFileSystem.resolve` returns the vault-relative key, which is exactly how `preload` keyed the map — so `buildGraph` finds every file directly. No heuristic.
 
 - [ ] **Step 4: Run — expect PASS**
 
@@ -1127,23 +1138,22 @@ git commit -m "feat(plugin): results sidebar view + validate command wiring"
 - [ ] **Step 1: Write `src/commands/autocolor.ts` (testable logic)**
 
 ```typescript
-import { buildGraph, applyColors, type WorkflowFileSystem } from "@perspecta/core";
+import { buildGraph, applyColors } from "@perspecta/core";
+import { ObsidianFileSystem } from "../fs/ObsidianFileSystem.js";
 import { preloadCanvas, type VaultReader } from "../fs/preload.js";
 
 /** Returns the recolored canvas JSON string (or null if nothing changed). */
 export async function computeRecoloredCanvas(canvasPath: string, vault: VaultReader): Promise<string | null> {
   const { map } = await preloadCanvas(canvasPath, vault);
-  let recolored: string | null = null;
-  const fs: WorkflowFileSystem = {
-    readText: (p) => { if (map.has(p)) return map.get(p)!; for (const [k, v] of map) if (p.endsWith(k)) return v; throw new Error(`Not preloaded: ${p}`); },
-    writeText: (_p, d) => { recolored = d; },
-    exists: (p) => { if (map.has(p)) return true; for (const k of map.keys()) if (p.endsWith(k)) return true; return false; },
-  };
+  const fs = new ObsidianFileSystem(map);
   const graph = buildGraph(canvasPath, { fs, vaultRoot: "" });
   const changed = applyColors(graph, canvasPath, fs);
-  return changed > 0 ? recolored : null;
+  // applyColors wrote the recolored JSON back through fs.writeText, keyed by the
+  // canvas path; read it from the buffered writes.
+  return changed > 0 ? fs.pendingWrites().get(canvasPath) ?? null : null;
 }
 ```
+NOTE: `applyColors` calls `fs.writeText(canvasPath, ...)` (the bare canvas path, since it's the one passed in). `ObsidianFileSystem` buffers that under `pendingWrites()[canvasPath]`. So we read it back by the same key. The canvas path is keyed as-is (not resolved through `fs.resolve`, which only applies to node `file` refs), so this is consistent.
 
 - [ ] **Step 2: Write a test `test/autocolor.test.ts`**
 
@@ -1413,8 +1423,10 @@ git commit -m "docs: monorepo README + plugin README with manual-test checklist"
 
 **Deferred per spec (correctly absent):** Phase 2 walk panel, Phase 3 LLM execution, async-core, community submission, config-runtime. None appear as tasks.
 
-**Placeholder scan:** The `mapFs` suffix-match bridge (B4/B6) is an acknowledged v0.1 simplification with a documented Phase 1.5 follow-up — it is fully specified (real code), not a placeholder. The "other insert-node types are trivial repeats" note in B7 ships ONE working command (prompt); not a placeholder (the one command is complete).
+**Placeholder scan:** None. The "other insert-node types are trivial repeats" note in B7 ships ONE working command (prompt); not a placeholder (the one command is complete). Path resolution is handled by a real `WorkflowFileSystem.resolve` seam (A2), not a heuristic.
 
 **Type consistency:** `WorkflowFileSystem` (readText/writeText/exists) consistent across A2/A5/B2. `buildGraph(path, {fs, vaultRoot?})`, `lint(graph, fs)`, `applyColors(graph, path, fs)`, `new Stepper(path, {fs, vaultRoot?})` — consistent A3 onward and in mcp-server (A5) and plugin (B4/B6). `LintResult`/`LintError` used in B4/B5 match core. `VaultReader` (read async, exists sync) consistent B3/B4/B6/main.ts. `preloadCanvas` returns `{map}` — used consistently.
 
-**Known v0.1 simplification (documented, not a defect):** the `mapFs` suffix-match between buildGraph's `node:path`-resolved keys and preload's vault-relative keys. Works for the realistic case (paths the canvas references); a precise path-normalization is the first Phase 1.5 refinement. Flagged in B4 and the plugin README.
+**Path-resolution seam (clean foundation):** `WorkflowFileSystem.resolve(canvasDir, file)` makes each adapter own resolution — `NodeFileSystem` uses `node:path` (absolute paths, today's behavior, all 35 tests unchanged); `ObsidianFileSystem` returns the vault-relative `file` directly (matching preload's keys). No suffix-match heuristic, no path-collision risk. This replaced an earlier fragile bridge and is the correct seam for both runtimes.
+
+**Type consistency (resolver addition):** `resolve(canvasDir, file)` is on the interface (A2) and implemented by `InMemoryFileSystem` (A2), `diskFs` test helper (A3), `NodeFileSystem` (A5), and `ObsidianFileSystem` (B2). `buildGraph` calls `fs.resolve` (A3); no caller uses `node:path` resolve for node files anymore.

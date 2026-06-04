@@ -1,7 +1,8 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import {
   PerspectaSettingsStore,
   renderSettingsShell,
+  wireAsyncButton,
   wiredText,
   wiredToggle,
   renderInfoBox,
@@ -58,6 +59,39 @@ export class PerspectaSettingTab extends PluginSettingTab {
               name: "Auto-color workflow nodes",
               desc: "Automatically color nodes by type when a workflow canvas opens or changes.",
             });
+          },
+        },
+        {
+          id: "install",
+          label: "Install",
+          render: (el) => {
+            renderInfoBox(el, {
+              variant: "info",
+              title: "Agent skills",
+              body: "Install or update the skills and workflow index that let agents discover and run Perspecta workflows in this vault.",
+            });
+            const status = el.createDiv({ cls: "perspecta-workflow-install-status" });
+            status.setText("Checking install status...");
+            void this.plugin.agentInstallStatus().then((s) => {
+              status.setText(`Installed skills: ${s.installedSkills}/4. Registry: ${s.hasRegistry ? "yes" : "no"}. CLAUDE.md pointer: ${s.hasPointer ? "yes" : "no"}.`);
+            });
+            new Setting(el)
+              .setName("Agent skills")
+              .setDesc("Writes plugin-owned skills to .claude/skills, rebuilds _agents/workflows/INDEX.md, and updates the vault CLAUDE.md pointer block.")
+              .addButton((button) => {
+                wireAsyncButton(button, {
+                  label: "Install / Update agent skills",
+                  runningLabel: "Installing...",
+                  cta: true,
+                  onClick: async () => {
+                    const count = await this.plugin.installAgentSkills();
+                    const s = await this.plugin.agentInstallStatus();
+                    status.setText(`Installed skills: ${s.installedSkills}/4. Registry: ${s.hasRegistry ? "yes" : "no"}. CLAUDE.md pointer: ${s.hasPointer ? "yes" : "no"}.`);
+                    new Notice(`Perspecta Workflow: installed agent skills and indexed ${count} workflow${count === 1 ? "" : "s"}`);
+                  },
+                  onError: (err) => new Notice(`Perspecta Workflow: install failed - ${(err as Error).message}`),
+                });
+              });
           },
         },
       ],

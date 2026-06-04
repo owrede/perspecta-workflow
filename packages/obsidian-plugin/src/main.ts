@@ -2,8 +2,9 @@ import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidia
 import { VERSION, isWorkflowCanvas, renderGenericSkill, summarizeWorkflow, type NodeType, type WorkflowSummary } from "@perspecta/core";
 import { PERSPECTA_UI_VERSION, PerspectaSettingsStore, CornerBadge } from "perspecta-ui";
 import { decideGenericSkill } from "./skills/reconcileGenericSkill.js";
-import { planWorkflowSkills, SKILLS_DIR, type SkillSyncPlan } from "./skills/syncWorkflowSkills.js";
+import { planWorkflowSkills, SKILLS_DIR, REGISTRY_PATH, type SkillSyncPlan } from "./skills/syncWorkflowSkills.js";
 import { upsertPointerBlock } from "./skills/claudePointer.js";
+import { bundledSkillWrites } from "./skills/bundledSkills.js";
 import { ObsidianFileSystem } from "./fs/ObsidianFileSystem.js";
 import { preloadCanvas } from "./fs/preload.js";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
@@ -73,8 +74,13 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   private async ensureParentDir(filePath: string): Promise<void> {
     const dir = filePath.slice(0, filePath.lastIndexOf("/"));
     if (!dir) return;
-    if (!(await this.app.vault.adapter.exists(dir))) {
-      await this.app.vault.adapter.mkdir(dir);
+    const parts = dir.split("/").filter((part) => part.length > 0);
+    let current = "";
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      if (!(await this.app.vault.adapter.exists(current))) {
+        await this.app.vault.adapter.mkdir(current);
+      }
     }
   }
 
@@ -97,6 +103,13 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     if (decideGenericSkill(installed, VERSION) === "skip") return;
     await this.ensureParentDir(path);
     await this.app.vault.adapter.write(path, renderGenericSkill(VERSION));
+  }
+
+  /** Install/update static plugin-owned skills shipped with this plugin build. */
+  private async writeBundledSkills(): Promise<void> {
+    for (const skill of bundledSkillWrites()) {
+      await this.writeIfChanged(skill.path, skill.content);
+    }
   }
 
   /** Build a summary for every marked canvas in the vault. Best-effort per canvas. */
@@ -170,6 +183,29 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       new Notice(`Perspecta: skill sync failed — ${(e as Error).message}`);
       return 0;
     }
+  }
+
+  /** User-facing install action for the settings Install tab. */
+  async installAgentSkills(): Promise<number> {
+    await this.writeBundledSkills();
+    await this.reconcileGenericSkill();
+    return this.rebuildWorkflowSkills();
+  }
+
+  async agentInstallStatus(): Promise<{ installedSkills: number; hasRegistry: boolean; hasPointer: boolean }> {
+    let installedSkills = 0;
+    for (const skill of bundledSkillWrites()) {
+      if (await this.app.vault.adapter.exists(skill.path)) installedSkills += 1;
+    }
+    if (await this.app.vault.adapter.exists(`${SKILLS_DIR}/perspecta-workflow/SKILL.md`)) {
+      installedSkills += 1;
+    }
+    const hasRegistry = await this.app.vault.adapter.exists(REGISTRY_PATH);
+    let hasPointer = false;
+    try {
+      hasPointer = (await this.app.vault.adapter.read("CLAUDE.md")).includes("perspecta-workflow:begin");
+    } catch { hasPointer = false; }
+    return { installedSkills, hasRegistry, hasPointer };
   }
 
   private activeCanvas(): TFile | null {
@@ -376,10 +412,6 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     // initial badge for whatever is open at load
     this.app.workspace.onLayoutReady(() => {
       void this.refreshBadge();
-      void (async () => {
-        await this.reconcileGenericSkill();
-        await this.rebuildWorkflowSkills();
-      })();
     });
   }
 

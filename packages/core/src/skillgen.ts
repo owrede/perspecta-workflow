@@ -15,16 +15,18 @@ function escapeCell(value: string): string {
 }
 
 /** Minimal frontmatter reader: returns top-level `key: value` string pairs.
- *  Good enough for the flat frontmatter the generators emit (no nesting). */
+ *  Good enough for the flat frontmatter the generators emit (no nesting).
+ *  Tolerates CRLF line endings so a file written with Windows newlines is still
+ *  recognized — important because the generated-skill marker drives pruning. */
 export function readSkillFrontmatter(text: string): Record<string, string> {
-  const m = text.match(/^---\n([\s\S]*?)\n---/);
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return {};
   const out: Record<string, string> = {};
   for (const line of m[1].split("\n")) {
     const idx = line.indexOf(":");
     if (idx === -1) continue;
     const key = line.slice(0, idx).trim();
-    const value = line.slice(idx + 1).trim();
+    const value = line.slice(idx + 1).trim(); // trim() also drops a trailing \r
     if (key) out[key] = value;
   }
   return out;

@@ -89,3 +89,13 @@ describe("renderRegistry — injection hardening", () => {
     expect(row).toContain("A \\| B");
   });
 });
+
+describe("readSkillFrontmatter — CRLF tolerance", () => {
+  it("reads frontmatter from a file with Windows (CRLF) line endings", () => {
+    const crlf = "---\r\nname: x\r\nperspecta_generated: true\r\n---\r\nbody";
+    const fm = readSkillFrontmatter(crlf);
+    // The generated marker must survive CRLF, else pruning would miss the orphan.
+    expect(fm.perspecta_generated).toBe("true");
+    expect(fm.name).toBe("x");
+  });
+});

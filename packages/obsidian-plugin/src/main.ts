@@ -1,6 +1,6 @@
 import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidian";
 import { VERSION, isWorkflowCanvas, renderGenericSkill, summarizeWorkflow, type NodeType, type WorkflowSummary } from "@perspecta/core";
-import { PERSPECTA_UI_VERSION } from "perspecta-ui";
+import { PERSPECTA_UI_VERSION, PerspectaSettingsStore, CornerBadge } from "perspecta-ui";
 import { decideGenericSkill } from "./skills/reconcileGenericSkill.js";
 import { planWorkflowSkills, SKILLS_DIR, type SkillSyncPlan } from "./skills/syncWorkflowSkills.js";
 import { upsertPointerBlock } from "./skills/claudePointer.js";
@@ -12,21 +12,28 @@ import { computeRecoloredCanvas } from "./commands/autocolor.js";
 import { stampCanvasJson } from "./commands/convertToWorkflow.js";
 import { setNodeTypeInFrontmatter, noteFilePathForNode, NODE_TYPE_OPTIONS, type NodeTypeOption } from "./commands/setNodeType.js";
 import { ColorWatcher } from "./live/colorWatcher.js";
-import { WorkflowBadge } from "./live/badge.js";
 import { attachNodeMenu } from "./live/nodeMenu.js";
 import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
 
 interface NoteFileRef { id: string; file: string; }
 
+/** Shared "Workflow" corner badge, from perspecta-ui's extension layer. */
+const workflowBadge = new CornerBadge("Workflow", "Perspecta workflow canvas");
+
 export default class PerspectaWorkflowPlugin extends Plugin {
+  settingsStore = new PerspectaSettingsStore<PerspectaSettings>(this, DEFAULT_SETTINGS);
+  /** Live snapshot of settings, kept in sync by the store's onChange. */
   settings: PerspectaSettings = DEFAULT_SETTINGS;
   private watcher!: ColorWatcher;
   private statusEl: HTMLElement | null = null;
   private menuDisposers = new Map<WorkspaceLeaf, () => void>();
 
-  async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
-  async saveSettings() { await this.saveData(this.settings); }
+  async loadSettings() {
+    this.settingsStore.onChange((s) => { this.settings = s; });
+    await this.settingsStore.load();
+  }
+  async saveSettings() { await this.settingsStore.save(); }
 
   // ---- shared helpers ------------------------------------------------------
 
@@ -193,8 +200,8 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     const file = this.activeCanvas();
     const marked = file ? await this.isMarkedCanvas(file.path) : false;
     // overlay (best-effort)
-    this.app.workspace.iterateAllLeaves((l) => WorkflowBadge.detach(l));
-    if (marked && leaf) WorkflowBadge.attach(leaf);
+    this.app.workspace.iterateAllLeaves((l) => workflowBadge.detach(l));
+    if (marked && leaf) workflowBadge.attach(leaf);
     // status-bar fallback (always reliable)
     if (this.statusEl) this.statusEl.setText(marked ? "⬡ Workflow" : "");
     // right-click "Set node type" menu on workflow canvases (best-effort)
@@ -404,7 +411,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   onunload() {
     for (const dispose of this.menuDisposers.values()) dispose();
     this.menuDisposers.clear();
-    this.app.workspace.iterateAllLeaves((l) => WorkflowBadge.detach(l));
+    this.app.workspace.iterateAllLeaves((l) => workflowBadge.detach(l));
     this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSPECTA).forEach((l) => l.detach());
   }
 }

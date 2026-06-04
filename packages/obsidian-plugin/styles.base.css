@@ -1,0 +1,5 @@
+.perspecta-results-empty { color: var(--text-muted); padding: 8px; }
+.perspecta-finding { padding: 6px 8px; border-bottom: 1px solid var(--background-modifier-border); cursor: pointer; }
+.perspecta-finding:hover { background: var(--background-modifier-hover); }
+.perspecta-finding-rule { font-weight: 600; }
+.perspecta-finding-ok { color: var(--text-success); padding: 8px; }

@@ -19,6 +19,18 @@ export const NODE_TYPE_OPTIONS: NodeTypeOption[] = NODE_TYPES.map((type) => ({
   description: DESCRIPTIONS[type],
 }));
 
+/** Resolve a canvas node id to its `.md` node-note path, given the canvas JSON.
+ *  Returns null if the node is missing, not a file-node, or not a markdown note. */
+export function noteFilePathForNode(canvasJson: string, nodeId: string): string | null {
+  let raw: { nodes?: { id?: string; type?: string; file?: string }[] };
+  try { raw = JSON.parse(canvasJson); } catch { return null; }
+  const node = (raw.nodes ?? []).find((n) => n.id === nodeId);
+  if (node && node.type === "file" && typeof node.file === "string" && node.file.endsWith(".md")) {
+    return node.file;
+  }
+  return null;
+}
+
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
 
 /**

@@ -4,9 +4,10 @@ import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
 import { runValidation } from "./commands/validate.js";
 import { computeRecoloredCanvas } from "./commands/autocolor.js";
 import { stampCanvasJson } from "./commands/convertToWorkflow.js";
-import { setNodeTypeInFrontmatter, NODE_TYPE_OPTIONS, type NodeTypeOption } from "./commands/setNodeType.js";
+import { setNodeTypeInFrontmatter, noteFilePathForNode, NODE_TYPE_OPTIONS, type NodeTypeOption } from "./commands/setNodeType.js";
 import { ColorWatcher } from "./live/colorWatcher.js";
 import { WorkflowBadge } from "./live/badge.js";
+import { attachNodeMenu } from "./live/nodeMenu.js";
 import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
 
@@ -16,6 +17,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   settings: PerspectaSettings = DEFAULT_SETTINGS;
   private watcher!: ColorWatcher;
   private statusEl: HTMLElement | null = null;
+  private menuDisposers = new Map<WorkspaceLeaf, () => void>();
 
   async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
   async saveSettings() { await this.saveData(this.settings); }
@@ -51,7 +53,25 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     return f && f.extension === "canvas" ? f : null;
   }
 
-  // ---- badge + status ------------------------------------------------------
+  /** Resolve a canvas node id → its .md node-note path, via the canvas file JSON. */
+  private async resolveNotePath(nodeId: string): Promise<string | null> {
+    const file = this.activeCanvas();
+    if (!file) return null;
+    try {
+      return noteFilePathForNode(await this.app.vault.adapter.read(file.path), nodeId);
+    } catch { return null; }
+  }
+
+  /** Write node_type into a node-note (frontmatter-preserving) and recolor. */
+  private async applyNodeType(notePath: string, nodeType: NodeType): Promise<void> {
+    const noteText = await this.app.vault.adapter.read(notePath);
+    await this.app.vault.adapter.write(notePath, setNodeTypeInFrontmatter(noteText, nodeType));
+    const canvas = this.activeCanvas();
+    if (canvas && this.settings.autoColor) this.watcher.onCanvasTouched(canvas.path);
+    new Notice(`Perspecta: node_type set to ${nodeType}`);
+  }
+
+  // ---- badge + status + node menu -----------------------------------------
 
   private async refreshBadge(): Promise<void> {
     const leaf = this.app.workspace.getMostRecentLeaf();
@@ -62,6 +82,26 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     if (marked && leaf) WorkflowBadge.attach(leaf);
     // status-bar fallback (always reliable)
     if (this.statusEl) this.statusEl.setText(marked ? "⬡ Workflow" : "");
+    // right-click "Set node type" menu on workflow canvases (best-effort)
+    this.refreshNodeMenu(leaf, marked);
+  }
+
+  /** Attach the node context menu on a marked canvas leaf; detach elsewhere. */
+  private refreshNodeMenu(leaf: WorkspaceLeaf | null, marked: boolean): void {
+    // detach disposers for leaves that are gone or no longer the active marked canvas
+    for (const [l, dispose] of this.menuDisposers) {
+      if (l !== leaf || !marked) { dispose(); this.menuDisposers.delete(l); }
+    }
+    if (!marked || !leaf || this.menuDisposers.has(leaf)) return;
+    const dispose = attachNodeMenu(leaf, {
+      isWorkflow: async () => {
+        const af = this.app.workspace.getActiveFile();
+        return !!af && af.extension === "canvas" && (await this.isMarkedCanvas(af.path));
+      },
+      resolveNotePath: (_l, nodeId) => this.resolveNotePath(nodeId),
+      applyNodeType: (notePath, nodeType) => this.applyNodeType(notePath, nodeType),
+    });
+    this.menuDisposers.set(leaf, dispose);
   }
 
   async onload() {
@@ -167,10 +207,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
           if (!targetFile) return;
           const nodeType = await this.chooseNodeType();
           if (!nodeType) return;
-          const noteText = await this.app.vault.adapter.read(targetFile);
-          await this.app.vault.adapter.write(targetFile, setNodeTypeInFrontmatter(noteText, nodeType));
-          if (this.settings.autoColor) this.watcher.onCanvasTouched(file.path);
-          new Notice(`Perspecta: node_type set to ${nodeType}`);
+          await this.applyNodeType(targetFile, nodeType);
         } catch (e) { new Notice(`Perspecta: ${(e as Error).message}`); }
       },
     });
@@ -226,6 +263,8 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   onunload() {
+    for (const dispose of this.menuDisposers.values()) dispose();
+    this.menuDisposers.clear();
     this.app.workspace.iterateAllLeaves((l) => WorkflowBadge.detach(l));
     this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSPECTA).forEach((l) => l.detach());
   }

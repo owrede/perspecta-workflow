@@ -6,6 +6,7 @@
   "scripts": {
     "build": "npm run changelog && node esbuild.config.mjs",
     "dev": "npm run changelog && node esbuild.config.mjs --watch",
+    "deploy": "npm run build && bash scripts/deploy-dev.sh",
     "changelog": "node scripts/gen-changelog.mjs",
     "changelog:check": "node scripts/gen-changelog.mjs --check",
     "test": "vitest run test",

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Resolve repo root from the script's own location so --version and the copy
+# work regardless of the caller's working directory.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 if [[ "${1:-}" == "--version" ]]; then
-  node -e 'console.log(require("./package.json").version)'
+  node -e "console.log(require('$ROOT/package.json').version)"
   exit 0
 fi
 
@@ -17,7 +21,6 @@ if [[ ! -d "$VAULT" ]]; then
   exit 1
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/skills"
 DEST="$VAULT/.claude/skills"
 

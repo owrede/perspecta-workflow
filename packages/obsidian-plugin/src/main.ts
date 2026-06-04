@@ -6,6 +6,7 @@ import { planWorkflowSkills, SKILLS_DIR, REGISTRY_PATH, type SkillSyncPlan } fro
 import { upsertPointerBlock } from "./skills/claudePointer.js";
 import { bundledSkillWrites } from "./skills/bundledSkills.js";
 import { ObsidianFileSystem } from "./fs/ObsidianFileSystem.js";
+import { ancestorDirs } from "./fs/paths.js";
 import { preloadCanvas } from "./fs/preload.js";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
 import { runValidation } from "./commands/validate.js";
@@ -72,14 +73,9 @@ export default class PerspectaWorkflowPlugin extends Plugin {
 
   /** Create the parent directory chain for a vault-relative file path if missing. */
   private async ensureParentDir(filePath: string): Promise<void> {
-    const dir = filePath.slice(0, filePath.lastIndexOf("/"));
-    if (!dir) return;
-    const parts = dir.split("/").filter((part) => part.length > 0);
-    let current = "";
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      if (!(await this.app.vault.adapter.exists(current))) {
-        await this.app.vault.adapter.mkdir(current);
+    for (const dir of ancestorDirs(filePath)) {
+      if (!(await this.app.vault.adapter.exists(dir))) {
+        await this.app.vault.adapter.mkdir(dir);
       }
     }
   }

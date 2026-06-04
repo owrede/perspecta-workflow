@@ -32,7 +32,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   private vaultReader() {
     return {
       read: (p: string) => this.app.vault.adapter.read(p),
-      exists: (_p: string) => true,
+      exists: (_p: string) => Promise.resolve(true),
     };
   }
 
@@ -57,7 +57,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   private adapterReader() {
     return {
       read: (p: string) => this.app.vault.adapter.read(p),
-      exists: (p: string) => this.app.vault.getAbstractFileByPath(p) != null,
+      exists: (p: string) => this.app.vault.adapter.exists(p),
     };
   }
 
@@ -68,6 +68,17 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     if (!(await this.app.vault.adapter.exists(dir))) {
       await this.app.vault.adapter.mkdir(dir);
     }
+  }
+
+  /** Write only if the file is absent or its content differs — avoids git churn
+   *  on unchanged launches (design spec §223). Returns true if it wrote. */
+  private async writeIfChanged(path: string, content: string): Promise<boolean> {
+    let current: string | null = null;
+    try { current = await this.app.vault.adapter.read(path); } catch { current = null; }
+    if (current === content) return false;
+    await this.ensureParentDir(path);
+    await this.app.vault.adapter.write(path, content);
+    return true;
   }
 
   /** Reconcile the bundled, version-stamped generic skill (install/upgrade/never-downgrade). */
@@ -126,19 +137,17 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       seen.add(w.path);
     }
     for (const w of plan.writes) {
-      await this.ensureParentDir(w.path);
-      await this.app.vault.adapter.write(w.path, w.content);
+      await this.writeIfChanged(w.path, w.content);
     }
     for (const d of plan.deletes) {
       try { await this.app.vault.adapter.remove(d); } catch { /* already gone */ }
     }
-    await this.ensureParentDir(plan.registryPath);
-    await this.app.vault.adapter.write(plan.registryPath, plan.registryContent);
+    await this.writeIfChanged(plan.registryPath, plan.registryContent);
 
     const pointerPath = "CLAUDE.md";
     let existing = "";
     try { existing = await this.app.vault.adapter.read(pointerPath); } catch { existing = ""; }
-    await this.app.vault.adapter.write(pointerPath, upsertPointerBlock(existing));
+    await this.writeIfChanged(pointerPath, upsertPointerBlock(existing));
   }
 
   /** Full regenerate: scan canvases → plan → apply. Best-effort; never throws. */

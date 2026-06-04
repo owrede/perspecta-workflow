@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { computeRecoloredCanvas } from "../src/commands/autocolor.js";
 
 function fakeVault(files: Record<string, string>) {
-  return { async read(p: string) { if (!(p in files)) throw new Error(`missing ${p}`); return files[p]; }, exists: (p: string) => p in files };
+  return { async read(p: string) { if (!(p in files)) throw new Error(`missing ${p}`); return files[p]; }, async exists(p: string) { return p in files; } };
 }
 
 describe("computeRecoloredCanvas", () => {

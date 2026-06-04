@@ -7,7 +7,7 @@ function fakeVault(files: Record<string, string>) {
       if (!(path in files)) throw new Error(`missing ${path}`);
       return files[path];
     },
-    exists(path: string): boolean { return path in files; },
+    async exists(path: string): Promise<boolean> { return path in files; },
   };
 }
 

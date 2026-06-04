@@ -6,3 +6,4 @@ export * from "./graph.js";
 export * from "./linter.js";
 export * from "./context.js";
 export * from "./stepper.js";
+export * from "./marker.js";

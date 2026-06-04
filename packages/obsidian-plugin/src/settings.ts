@@ -3,14 +3,12 @@ import type PerspectaWorkflowPlugin from "./main.js";
 
 export interface PerspectaSettings {
   nodeFolder: string;
-  autoColorOnSave: boolean;
-  liveValidation: boolean;
+  autoColor: boolean;
 }
 
 export const DEFAULT_SETTINGS: PerspectaSettings = {
   nodeFolder: "workflows",
-  autoColorOnSave: false,
-  liveValidation: false,
+  autoColor: true,
 };
 
 export class PerspectaSettingTab extends PluginSettingTab {
@@ -23,10 +21,8 @@ export class PerspectaSettingTab extends PluginSettingTab {
       .setDesc("Where inserted WorkflowNode notes are created.")
       .addText((t) => t.setValue(this.plugin.settings.nodeFolder).onChange(async (v) => { this.plugin.settings.nodeFolder = v; await this.plugin.saveSettings(); }));
     new Setting(containerEl)
-      .setName("Auto-color on save")
-      .addToggle((t) => t.setValue(this.plugin.settings.autoColorOnSave).onChange(async (v) => { this.plugin.settings.autoColorOnSave = v; await this.plugin.saveSettings(); }));
-    new Setting(containerEl)
-      .setName("Live validation")
-      .addToggle((t) => t.setValue(this.plugin.settings.liveValidation).onChange(async (v) => { this.plugin.settings.liveValidation = v; await this.plugin.saveSettings(); }));
+      .setName("Auto-color workflow nodes")
+      .setDesc("Automatically color nodes by type when a workflow canvas opens or changes.")
+      .addToggle((t) => t.setValue(this.plugin.settings.autoColor).onChange(async (v) => { this.plugin.settings.autoColor = v; await this.plugin.saveSettings(); }));
   }
 }

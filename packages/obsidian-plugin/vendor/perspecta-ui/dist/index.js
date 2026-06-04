@@ -6,6 +6,7 @@ export { wireAsyncButton } from "./native/async-button.js";
 export { wiredToggle, wiredText } from "./native/wired-setting.js";
 export { sliderWithReset, colorWithReset, dropdownWithReset, } from "./native/with-reset.js";
 export { renderInfoBox } from "./native/info-box.js";
+export { renderInstallSection } from "./native/install-section.js";
 export { ConfirmModal, modalButtonFooter } from "./native/confirm-modal.js";
 export { renderSettingsShell, renderVersionHeader, renderChangelogList, } from "./native/settings-shell.js";
 // extension

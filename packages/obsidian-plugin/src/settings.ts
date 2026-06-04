@@ -2,13 +2,14 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import {
   PerspectaSettingsStore,
   renderSettingsShell,
-  wireAsyncButton,
+  renderInstallSection,
+  renderInfoBox,
   wiredText,
   wiredToggle,
-  renderInfoBox,
   type ChangelogModel,
 } from "perspecta-ui";
 import type PerspectaWorkflowPlugin from "./main.js";
+import { bundledSkillWrites } from "./skills/bundledSkills.js";
 
 export interface PerspectaSettings {
   nodeFolder: string;
@@ -65,33 +66,21 @@ export class PerspectaSettingTab extends PluginSettingTab {
           id: "install",
           label: "Install",
           render: (el) => {
-            renderInfoBox(el, {
-              variant: "info",
-              title: "Agent skills",
+            // Bundled static skills plus the generated generic workflow skill.
+            const total = bundledSkillWrites().length + 1;
+            renderInstallSection<number>(el, {
               body: "Install or update the skills and workflow index that let agents discover and run Perspecta workflows in this vault.",
+              settingDesc: "Writes plugin-owned skills to .claude/skills, rebuilds _agents/workflows/INDEX.md, and updates the vault CLAUDE.md pointer block.",
+              status: async () => {
+                const s = await this.plugin.agentInstallStatus();
+                return `Installed skills: ${s.installedSkills}/${total}. Registry: ${s.hasRegistry ? "yes" : "no"}. CLAUDE.md pointer: ${s.hasPointer ? "yes" : "no"}.`;
+              },
+              install: () => this.plugin.installAgentSkills(),
+              onInstalled: (count) => {
+                new Notice(`Perspecta Workflow: installed agent skills and indexed ${count} workflow${count === 1 ? "" : "s"}`);
+              },
+              onError: (err) => new Notice(`Perspecta Workflow: install failed - ${(err as Error).message}`),
             });
-            const status = el.createDiv({ cls: "perspecta-workflow-install-status" });
-            status.setText("Checking install status...");
-            void this.plugin.agentInstallStatus().then((s) => {
-              status.setText(`Installed skills: ${s.installedSkills}/4. Registry: ${s.hasRegistry ? "yes" : "no"}. CLAUDE.md pointer: ${s.hasPointer ? "yes" : "no"}.`);
-            });
-            new Setting(el)
-              .setName("Agent skills")
-              .setDesc("Writes plugin-owned skills to .claude/skills, rebuilds _agents/workflows/INDEX.md, and updates the vault CLAUDE.md pointer block.")
-              .addButton((button) => {
-                wireAsyncButton(button, {
-                  label: "Install / Update agent skills",
-                  runningLabel: "Installing...",
-                  cta: true,
-                  onClick: async () => {
-                    const count = await this.plugin.installAgentSkills();
-                    const s = await this.plugin.agentInstallStatus();
-                    status.setText(`Installed skills: ${s.installedSkills}/4. Registry: ${s.hasRegistry ? "yes" : "no"}. CLAUDE.md pointer: ${s.hasPointer ? "yes" : "no"}.`);
-                    new Notice(`Perspecta Workflow: installed agent skills and indexed ${count} workflow${count === 1 ? "" : "s"}`);
-                  },
-                  onError: (err) => new Notice(`Perspecta Workflow: install failed - ${(err as Error).message}`),
-                });
-              });
           },
         },
       ],

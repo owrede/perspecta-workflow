@@ -6,6 +6,7 @@ export { wireAsyncButton, type AsyncButtonSpec } from "./native/async-button.js"
 export { wiredToggle, wiredText } from "./native/wired-setting.js";
 export { sliderWithReset, colorWithReset, dropdownWithReset, type SliderResetSpec, type ColorResetSpec, type DropdownResetSpec, } from "./native/with-reset.js";
 export { renderInfoBox, type InfoBoxSpec } from "./native/info-box.js";
+export { renderInstallSection, type InstallSectionSpec } from "./native/install-section.js";
 export { ConfirmModal, modalButtonFooter, type ConfirmSpec, type ModalFooterSpec } from "./native/confirm-modal.js";
 export { renderSettingsShell, renderVersionHeader, renderChangelogList, type SettingsShellSpec, type ShellTab, type ManifestHost, } from "./native/settings-shell.js";
 export { CornerBadge } from "./extension/corner-badge.js";

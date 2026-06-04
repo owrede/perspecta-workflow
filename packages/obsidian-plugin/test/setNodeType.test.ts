@@ -53,10 +53,10 @@ describe("noteFilePathForNode", () => {
 });
 
 describe("NODE_TYPE_OPTIONS", () => {
-  it("lists all 8 node types with descriptions, sourced from core", () => {
-    expect(NODE_TYPE_OPTIONS).toHaveLength(8);
+  it("lists all 9 node types with descriptions, sourced from core", () => {
+    expect(NODE_TYPE_OPTIONS).toHaveLength(9);
     const types = NODE_TYPE_OPTIONS.map((o) => o.type).sort();
-    expect(types).toEqual(["config", "contract", "data", "end", "loop", "prompt", "start", "tool"]);
+    expect(types).toEqual(["config", "contract", "data", "end", "formatter", "loop", "prompt", "start", "tool"]);
     for (const o of NODE_TYPE_OPTIONS) expect(o.description.length).toBeGreaterThan(0);
   });
 });

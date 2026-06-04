@@ -23,7 +23,7 @@ export interface Canvas {
 }
 
 export const NODE_TYPES = [
-  "start", "end", "prompt", "tool", "data", "contract", "loop", "config",
+  "start", "end", "prompt", "tool", "data", "contract", "loop", "config", "formatter",
 ] as const;
 
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -38,24 +38,31 @@ export const NODE_COLORS: Record<NodeType, string> = {
   contract: "5",  // (blue not a preset → reuse cyan family; hex override applied in linter)
   loop: "3",      // yellow
   config: "0",    // gray (no color key → linter omits/uses default)
+  formatter: "0", // olive (no preset → hex override applied in linter)
 };
 
-// Hex overrides where a preset doesn't exist (contract = blue, config = gray)
+// Hex overrides where a preset doesn't exist (contract = blue, config = gray, formatter = olive)
 export const NODE_COLOR_HEX: Partial<Record<NodeType, string>> = {
   contract: "#4363d8",
   config: "#a9a9a9",
+  formatter: "#999900",
 };
 
 // A node-note's parsed frontmatter
 export interface WorkflowNodeFrontmatter {
   class: "WorkflowNode";
   node_type: NodeType;
+  inputs?: string[];
   outputs?: string[];
   tool?: string;
   params?: Record<string, unknown>;
   contract?: string;
   source?: string;
   condition?: string;
+  // tool: write_note — structured, Obsidian-Properties-friendly output target
+  target_folder?: string;
+  filename_template?: string;
+  on_exists?: "overwrite" | "append" | "version";
 }
 
 // A resolved workflow node in the graph

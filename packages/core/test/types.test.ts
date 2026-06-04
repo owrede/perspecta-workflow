@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { NODE_TYPES, NODE_COLORS } from "../src/types.js";
 
 describe("node type constants", () => {
-  it("defines all eight workflow node types", () => {
+  it("defines all nine workflow node types", () => {
     expect(NODE_TYPES).toEqual([
-      "start", "end", "prompt", "tool", "data", "contract", "loop", "config",
+      "start", "end", "prompt", "tool", "data", "contract", "loop", "config", "formatter",
     ]);
   });
 

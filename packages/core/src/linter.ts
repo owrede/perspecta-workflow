@@ -1,4 +1,4 @@
-import { NODE_COLORS, NODE_COLOR_HEX, type WorkflowGraph, type NodeType } from "./types.js";
+import { NODE_TYPES, NODE_COLORS, NODE_COLOR_HEX, type WorkflowGraph, type NodeType } from "./types.js";
 import { buildGraph } from "./graph.js";
 import type { WorkflowFileSystem } from "./fs.js";
 
@@ -58,7 +58,7 @@ export function lint(graph: WorkflowGraph, fs: WorkflowFileSystem): LintResult {
   }
 
   // Rule 3: every workflow node has a valid node_type (subworkflow exempt)
-  const VALID: NodeType[] = ["start","end","prompt","tool","data","contract","loop","config"];
+  const VALID: readonly NodeType[] = NODE_TYPES;
   for (const n of nodes) {
     if (n.kind === "subworkflow") continue;
     if (!VALID.includes(n.kind as NodeType)) {

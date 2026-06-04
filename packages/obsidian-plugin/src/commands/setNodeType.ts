@@ -11,9 +11,10 @@ const DESCRIPTIONS: Record<NodeType, string> = {
   contract: "a vault-memory contract",
   loop: "conditional loop / branch-back",
   config: "workflow parameters (e.g. maxloops)",
+  formatter: "render an output template from context vars",
 };
 
-/** The 8 node types with descriptions, sourced from core's NODE_TYPES. */
+/** The node types with descriptions, sourced from core's NODE_TYPES. */
 export const NODE_TYPE_OPTIONS: NodeTypeOption[] = NODE_TYPES.map((type) => ({
   type,
   description: DESCRIPTIONS[type],

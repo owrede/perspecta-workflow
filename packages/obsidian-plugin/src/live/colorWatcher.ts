@@ -1,11 +1,15 @@
+/** Opaque timer handle — works whether schedule() is browser setTimeout (number)
+ *  or Node setTimeout (Timeout). The watcher never inspects it. */
+export type TimerId = unknown;
+
 export interface ColorWatcherDeps {
   debounceMs: number;
   /** True if the canvas at this path carries the workflow marker. */
   isMarked: (canvasPath: string) => Promise<boolean>;
   /** Recolor + write the canvas; returns the written content or null if unchanged. */
   recolor: (canvasPath: string) => Promise<string | null>;
-  schedule: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
-  clearScheduled: (id: ReturnType<typeof setTimeout>) => void;
+  schedule: (fn: () => void, ms: number) => TimerId;
+  clearScheduled: (id: TimerId) => void;
 }
 
 /**
@@ -15,7 +19,7 @@ export interface ColorWatcherDeps {
  * wrote `path` so the resulting modify is ignored once.
  */
 export class ColorWatcher {
-  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private timers = new Map<string, TimerId>();
   private suppress = new Set<string>();
 
   constructor(private deps: ColorWatcherDeps) {}

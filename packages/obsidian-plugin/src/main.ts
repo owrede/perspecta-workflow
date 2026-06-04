@@ -1,41 +1,138 @@
-import { Plugin, Notice, WorkspaceLeaf } from "obsidian";
-import { VERSION } from "@perspecta/core";
+import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidian";
+import { VERSION, isWorkflowCanvas, type NodeType } from "@perspecta/core";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
 import { runValidation } from "./commands/validate.js";
+import { computeRecoloredCanvas } from "./commands/autocolor.js";
+import { stampCanvasJson } from "./commands/convertToWorkflow.js";
+import { setNodeTypeInFrontmatter, NODE_TYPE_OPTIONS, type NodeTypeOption } from "./commands/setNodeType.js";
+import { ColorWatcher } from "./live/colorWatcher.js";
+import { WorkflowBadge } from "./live/badge.js";
 import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
 
+interface NoteFileRef { id: string; file: string; }
+
 export default class PerspectaWorkflowPlugin extends Plugin {
   settings: PerspectaSettings = DEFAULT_SETTINGS;
+  private watcher!: ColorWatcher;
+  private statusEl: HTMLElement | null = null;
 
   async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
   async saveSettings() { await this.saveData(this.settings); }
+
+  // ---- shared helpers ------------------------------------------------------
+
+  private vaultReader() {
+    return {
+      read: (p: string) => this.app.vault.adapter.read(p),
+      exists: (_p: string) => true,
+    };
+  }
+
+  /** Read a canvas file and report whether it carries the workflow marker. */
+  private async isMarkedCanvas(path: string): Promise<boolean> {
+    try {
+      const text = await this.app.vault.adapter.read(path);
+      return isWorkflowCanvas(JSON.parse(text));
+    } catch { return false; }
+  }
+
+  /** Recolor a canvas if marked; write back; tell the watcher we self-wrote. Returns written content or null. */
+  private async recolorCanvas(path: string): Promise<string | null> {
+    const out = await computeRecoloredCanvas(path, this.vaultReader());
+    if (out == null) return null;
+    this.watcher.onSelfWrite(path);
+    await this.app.vault.adapter.write(path, out);
+    return out;
+  }
+
+  private activeCanvas(): TFile | null {
+    const f = this.app.workspace.getActiveFile();
+    return f && f.extension === "canvas" ? f : null;
+  }
+
+  // ---- badge + status ------------------------------------------------------
+
+  private async refreshBadge(): Promise<void> {
+    const leaf = this.app.workspace.getMostRecentLeaf();
+    const file = this.activeCanvas();
+    const marked = file ? await this.isMarkedCanvas(file.path) : false;
+    // overlay (best-effort)
+    this.app.workspace.iterateAllLeaves((l) => WorkflowBadge.detach(l));
+    if (marked && leaf) WorkflowBadge.attach(leaf);
+    // status-bar fallback (always reliable)
+    if (this.statusEl) this.statusEl.setText(marked ? "⬡ Workflow" : "");
+  }
 
   async onload() {
     console.log(`Perspecta Workflow plugin v${VERSION} loaded`);
 
     await this.loadSettings();
     this.addSettingTab(new PerspectaSettingTab(this.app, this));
-
     this.registerView(VIEW_TYPE_PERSPECTA, (leaf: WorkspaceLeaf) => new ResultsView(leaf));
+
+    this.statusEl = this.addStatusBarItem();
+
+    this.watcher = new ColorWatcher({
+      debounceMs: 400,
+      isMarked: (p) => this.isMarkedCanvas(p),
+      recolor: (p) => this.recolorCanvas(p),
+      schedule: (fn, ms) => window.setTimeout(fn, ms),
+      clearScheduled: (id) => window.clearTimeout(id as number),
+    });
+
+    // ---- events ----
+    this.registerEvent(this.app.workspace.on("file-open", async (file) => {
+      await this.refreshBadge();
+      if (this.settings.autoColor && file && file.extension === "canvas") {
+        this.watcher.onCanvasTouched(file.path);
+      }
+    }));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => { void this.refreshBadge(); }));
+    this.registerEvent(this.app.vault.on("modify", (file) => {
+      if (!this.settings.autoColor || !(file instanceof TFile)) return;
+      if (file.extension === "canvas") {
+        this.watcher.onCanvasTouched(file.path);
+      } else if (file.extension === "md") {
+        // a node-note changed: recolor the active canvas if it's a workflow
+        const canvas = this.activeCanvas();
+        if (canvas) this.watcher.onCanvasTouched(canvas.path);
+      }
+    }));
+
+    // ---- commands ----
+    this.addCommand({
+      id: "use-canvas-as-workflow",
+      name: "Use canvas as workflow",
+      callback: async () => {
+        const file = this.activeCanvas();
+        if (!file) { new Notice("Open a canvas first"); return; }
+        try {
+          const json = await this.app.vault.adapter.read(file.path);
+          const out = stampCanvasJson(json);
+          if (out == null) { new Notice("Already a workflow canvas"); return; }
+          this.watcher.onSelfWrite(file.path);
+          await this.app.vault.adapter.write(file.path, out);
+          await this.refreshBadge();
+          if (this.settings.autoColor) this.watcher.onCanvasTouched(file.path);
+          new Notice("Perspecta: canvas marked as workflow");
+        } catch (e) { new Notice(`Perspecta: ${(e as Error).message}`); }
+      },
+    });
 
     this.addCommand({
       id: "validate-workflow-canvas",
       name: "Validate workflow canvas",
       callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file || file.extension !== "canvas") { new Notice("Not a workflow canvas"); return; }
+        const file = this.activeCanvas();
+        if (!file) { new Notice("Not a workflow canvas"); return; }
+        if (!(await this.isMarkedCanvas(file.path))) { new Notice("Not a workflow canvas. Run 'Use canvas as workflow' first."); return; }
         try {
-          const result = await runValidation(file.path, {
-            read: (p: string) => this.app.vault.adapter.read(p),
-            exists: (_p: string) => true,
-          });
+          const result = await runValidation(file.path, this.vaultReader());
           await this.revealResults();
           const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSPECTA)[0]?.view as ResultsView;
           view?.setResult(result);
-        } catch (e) {
-          new Notice(`Perspecta: ${(e as Error).message}`);
-        }
+        } catch (e) { new Notice(`Perspecta: ${(e as Error).message}`); }
       },
     });
 
@@ -43,20 +140,38 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       id: "apply-node-colors",
       name: "Apply node colors",
       callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file || file.extension !== "canvas") { new Notice("Not a workflow canvas"); return; }
+        const file = this.activeCanvas();
+        if (!file) { new Notice("Not a workflow canvas"); return; }
+        if (!(await this.isMarkedCanvas(file.path))) { new Notice("Not a workflow canvas. Run 'Use canvas as workflow' first."); return; }
         try {
-          const { computeRecoloredCanvas } = await import("./commands/autocolor.js");
-          const out = await computeRecoloredCanvas(file.path, {
-            read: (p: string) => this.app.vault.adapter.read(p),
-            exists: (_p: string) => true,
-          });
-          if (out == null) { new Notice("Colors already up to date"); return; }
-          await this.app.vault.adapter.write(file.path, out);
-          new Notice("Perspecta: node colors applied");
-        } catch (e) {
-          new Notice(`Perspecta: ${(e as Error).message}`);
-        }
+          const out = await this.recolorCanvas(file.path);
+          new Notice(out == null ? "Colors already up to date" : "Perspecta: node colors applied");
+        } catch (e) { new Notice(`Perspecta: ${(e as Error).message}`); }
+      },
+    });
+
+    this.addCommand({
+      id: "set-node-type",
+      name: "Set node type",
+      callback: async () => {
+        const file = this.activeCanvas();
+        if (!file) { new Notice("Not a workflow canvas"); return; }
+        if (!(await this.isMarkedCanvas(file.path))) { new Notice("Not a workflow canvas. Run 'Use canvas as workflow' first."); return; }
+        try {
+          const canvasJson = JSON.parse(await this.app.vault.adapter.read(file.path));
+          const noteFiles: NoteFileRef[] = (canvasJson.nodes ?? [])
+            .filter((n: { type?: string; file?: string }) => n.type === "file" && typeof n.file === "string" && n.file.endsWith(".md"))
+            .map((n: { id: string; file: string }) => ({ id: n.id, file: n.file }));
+          if (noteFiles.length === 0) { new Notice("No node-notes on this canvas"); return; }
+          const targetFile = await this.chooseNoteFile(noteFiles);
+          if (!targetFile) return;
+          const nodeType = await this.chooseNodeType();
+          if (!nodeType) return;
+          const noteText = await this.app.vault.adapter.read(targetFile);
+          await this.app.vault.adapter.write(targetFile, setNodeTypeInFrontmatter(noteText, nodeType));
+          if (this.settings.autoColor) this.watcher.onCanvasTouched(file.path);
+          new Notice(`Perspecta: node_type set to ${nodeType}`);
+        } catch (e) { new Notice(`Perspecta: ${(e as Error).message}`); }
       },
     });
 
@@ -64,15 +179,39 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       id: "insert-prompt-node",
       name: "Insert prompt node",
       callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file || file.extension !== "canvas") { new Notice("Open a workflow canvas first"); return; }
+        const file = this.activeCanvas();
+        if (!file) { new Notice("Open a workflow canvas first"); return; }
         const id = `n${Date.now()}`;
         const notePath = `${this.settings.nodeFolder}/${id}.md`;
         await this.app.vault.adapter.write(notePath, buildNodeNote("prompt"));
-        const canvasJson = await this.app.vault.adapter.read(file.path);
+        let canvasJson = await this.app.vault.adapter.read(file.path);
+        // inserting a node implies workflow intent: stamp the marker if missing
+        const stamped = stampCanvasJson(canvasJson);
+        if (stamped != null) canvasJson = stamped;
+        this.watcher.onSelfWrite(file.path);
         await this.app.vault.adapter.write(file.path, addFileNodeToCanvas(canvasJson, notePath, id));
+        await this.refreshBadge();
+        if (this.settings.autoColor) this.watcher.onCanvasTouched(file.path);
         new Notice("Perspecta: prompt node inserted");
       },
+    });
+
+    // initial badge for whatever is open at load
+    this.app.workspace.onLayoutReady(() => { void this.refreshBadge(); });
+  }
+
+  // ---- choosers ------------------------------------------------------------
+
+  private chooseNodeType(): Promise<NodeType | null> {
+    return new Promise((resolve) => {
+      new NodeTypeModal(this.app, NODE_TYPE_OPTIONS, (opt) => resolve(opt ? opt.type : null)).open();
+    });
+  }
+
+  private chooseNoteFile(files: NoteFileRef[]): Promise<string | null> {
+    if (files.length === 1) return Promise.resolve(files[0].file);
+    return new Promise((resolve) => {
+      new NoteFileModal(this.app, files, (f) => resolve(f ? f.file : null)).open();
     });
   }
 
@@ -87,6 +226,42 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   onunload() {
+    this.app.workspace.iterateAllLeaves((l) => WorkflowBadge.detach(l));
     this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSPECTA).forEach((l) => l.detach());
   }
+}
+
+class NodeTypeModal extends SuggestModal<NodeTypeOption> {
+  private chosen = false;
+  constructor(app: App, private options: NodeTypeOption[], private onChoose: (o: NodeTypeOption | null) => void) {
+    super(app);
+    this.setPlaceholder("Pick a node type…");
+  }
+  getSuggestions(query: string): NodeTypeOption[] {
+    const q = query.toLowerCase();
+    return this.options.filter((o) => o.type.includes(q) || o.description.toLowerCase().includes(q));
+  }
+  renderSuggestion(o: NodeTypeOption, el: HTMLElement) {
+    el.createDiv({ text: o.type, cls: "perspecta-finding-rule" });
+    el.createDiv({ text: o.description });
+  }
+  onChooseSuggestion(o: NodeTypeOption) { this.chosen = true; this.onChoose(o); }
+  onClose() { if (!this.chosen) this.onChoose(null); }
+}
+
+class NoteFileModal extends SuggestModal<NoteFileRef> {
+  private chosen = false;
+  constructor(app: App, private files: NoteFileRef[], private onChoose: (f: NoteFileRef | null) => void) {
+    super(app);
+    this.setPlaceholder("Which node?");
+  }
+  getSuggestions(query: string): NoteFileRef[] {
+    const q = query.toLowerCase();
+    return this.files.filter((f) => f.file.toLowerCase().includes(q) || f.id.toLowerCase().includes(q));
+  }
+  renderSuggestion(f: NoteFileRef, el: HTMLElement) {
+    el.createDiv({ text: f.file });
+  }
+  onChooseSuggestion(f: NoteFileRef) { this.chosen = true; this.onChoose(f); }
+  onClose() { if (!this.chosen) this.onChoose(null); }
 }

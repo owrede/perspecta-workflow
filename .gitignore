@@ -6,3 +6,6 @@ dist/
 # Obsidian plugin build artifact (built fresh for releases — see B8)
 packages/obsidian-plugin/main.js
 .DS_Store
+
+# Vendored prebuilt perspecta-ui must be tracked (CI resolves it without the sibling repo)
+!packages/obsidian-plugin/vendor/**

@@ -9,7 +9,11 @@
     "changelog": "node scripts/gen-changelog.mjs",
     "changelog:check": "node scripts/gen-changelog.mjs --check",
     "test": "vitest run test",
+    "test:watch": "vitest test",
     "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@perspecta/core": "*",

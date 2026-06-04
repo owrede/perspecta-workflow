@@ -53,21 +53,19 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     return f && f.extension === "canvas" ? f : null;
   }
 
-  /** Resolve a canvas node id → its .md node-note path, via the canvas file JSON. */
-  private async resolveNotePath(nodeId: string): Promise<string | null> {
-    const file = this.activeCanvas();
-    if (!file) return null;
+  /** Resolve a canvas node id → its .md node-note path, via an explicit canvas file JSON. */
+  private async resolveNotePathInCanvas(canvasPath: string, nodeId: string): Promise<string | null> {
     try {
-      return noteFilePathForNode(await this.app.vault.adapter.read(file.path), nodeId);
+      return noteFilePathForNode(await this.app.vault.adapter.read(canvasPath), nodeId);
     } catch { return null; }
   }
 
-  /** Write node_type into a node-note (frontmatter-preserving) and recolor. */
-  private async applyNodeType(notePath: string, nodeType: NodeType): Promise<void> {
+  /** Write node_type into a node-note (frontmatter-preserving) and recolor the given canvas. */
+  private async applyNodeType(notePath: string, nodeType: NodeType, canvasPath?: string): Promise<void> {
     const noteText = await this.app.vault.adapter.read(notePath);
     await this.app.vault.adapter.write(notePath, setNodeTypeInFrontmatter(noteText, nodeType));
-    const canvas = this.activeCanvas();
-    if (canvas && this.settings.autoColor) this.watcher.onCanvasTouched(canvas.path);
+    const path = canvasPath ?? this.activeCanvas()?.path;
+    if (path && this.settings.autoColor) this.watcher.onCanvasTouched(path);
     new Notice(`Perspecta: node_type set to ${nodeType}`);
   }
 
@@ -86,6 +84,13 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     this.refreshNodeMenu(leaf, marked);
   }
 
+  /** Get the canvas file path bound to a specific leaf (NOT the global active file). */
+  private canvasPathForLeaf(leaf: WorkspaceLeaf): string | null {
+    const f = (leaf.view as unknown as { file?: { path?: string; extension?: string } }).file;
+    if (f && typeof f.path === "string" && f.path.endsWith(".canvas")) return f.path;
+    return null;
+  }
+
   /** Attach the node context menu on a marked canvas leaf; detach elsewhere. */
   private refreshNodeMenu(leaf: WorkspaceLeaf | null, marked: boolean): void {
     // detach disposers for leaves that are gone or no longer the active marked canvas
@@ -94,12 +99,13 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     }
     if (!marked || !leaf || this.menuDisposers.has(leaf)) return;
     const dispose = attachNodeMenu(leaf, {
-      isWorkflow: async () => {
-        const af = this.app.workspace.getActiveFile();
-        return !!af && af.extension === "canvas" && (await this.isMarkedCanvas(af.path));
+      // Bind to THIS leaf's canvas file, not getActiveFile() (which can return
+      // the embedded node-note when a node is selected).
+      resolveNotePath: async (l, nodeId) => {
+        const path = this.canvasPathForLeaf(l);
+        return path ? this.resolveNotePathInCanvas(path, nodeId) : null;
       },
-      resolveNotePath: (_l, nodeId) => this.resolveNotePath(nodeId),
-      applyNodeType: (notePath, nodeType) => this.applyNodeType(notePath, nodeType),
+      applyNodeType: (notePath, nodeType) => this.applyNodeType(notePath, nodeType, this.canvasPathForLeaf(leaf) ?? undefined),
     });
     this.menuDisposers.set(leaf, dispose);
   }

@@ -1,6 +1,6 @@
 export interface VaultReader {
   read(path: string): Promise<string>;
-  exists(path: string): boolean;
+  exists(path: string): Promise<boolean>;
 }
 
 export interface PreloadResult { map: Map<string, string>; }
@@ -29,7 +29,7 @@ export async function preloadCanvas(canvasPath: string, vault: VaultReader): Pro
       if (target.endsWith(".canvas")) {
         await loadCanvas(target);
       } else if (!map.has(target)) {
-        if (vault.exists(target)) map.set(target, await vault.read(target));
+        if (await vault.exists(target)) map.set(target, await vault.read(target));
       }
     }
   }

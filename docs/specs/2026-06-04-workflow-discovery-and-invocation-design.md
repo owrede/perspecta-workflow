@@ -14,44 +14,68 @@ use them — and there's no ergonomic way to invoke one by name.
 
 Two capabilities:
 
-1. **`/perspecta <workflow-name>`** — a Claude Code slash command (in the vault's
-   `.claude/commands/`) that loads a named workflow and has the agent walk/execute
-   it via the existing MCP tools. `/perspecta` with no argument lists workflows.
+1. **`/perspecta:workflow <name>`** (alias **`/ppa:workflow <name>`**) — a Claude
+   Code slash command (in the vault's `.claude/commands/`) that loads a named
+   workflow and has the agent walk/execute it via the existing MCP tools. With no
+   argument it lists workflows.
 2. **Ambient agent awareness** — agents working in the vault know workflows
    exist, what each does, and when to trigger one, via a generated registry the
    agent reads (and a pointer from the vault's agent instructions).
 
 The registry is **generated from the canvases** (single source of truth).
 
-## Critical prerequisite: rename the marker key
+## Suite conventions (Perspecta plugin family)
+
+Perspecta is an umbrella for a family of Obsidian plugins: **perspecta-obsidian**
+(window/workspace), **perspecta-slides**, **perspecta-workflow** (this), and a
+future **perspecta-memory** (the renamed vault-memory). Agent-facing identifiers
+and file metadata use a **shared `perspecta` namespace + per-plugin suffix** so
+features read as one suite and siblings never collide.
+
+- **Agent identifiers:** `perspecta:<plugin>` canonical, `ppa:<plugin>` short
+  alias. For this plugin: `perspecta:workflow` (alias `ppa:workflow`). Both resolve
+  to the same command.
+- **Canvas/file metadata:** one suite key with per-plugin sub-objects —
+  `perspecta: { workflow: {…}, slides: {…}, memory: {…} }`.
+
+## Critical prerequisite: restructure the marker into the suite namespace
 
 **Discovery:** some canvases in this vault already carry a top-level `perspecta`
-key for an unrelated purpose (`"perspecta": { "uid": "…" }`, from another tool —
-likely Advanced URI). Our Phase-1.5 marker is also `perspecta: {workflow:true,
-version:1}`. They coexist *today* only because `isWorkflowCanvas` checks the
-`.workflow` sub-field — but the shared key name is a collision: either tool could
-overwrite the other's `perspecta` object wholesale.
+key from another tool (`"perspecta": { "uid": "…" }`, likely Advanced URI). The
+Phase-1.5 marker was `perspecta: { workflow: true, version: 1 }` (a flat shape).
 
-**Decision:** rename our marker to a collision-proof key **`perspectaWorkflow`**:
+**Decision:** adopt the suite-namespaced sub-object shape and **merge** on write
+so the suite namespace is shared cleanly across plugins AND any foreign keys are
+preserved:
 
 ```json
-{ "perspectaWorkflow": { "version": 1 }, "nodes": [...], "edges": [...] }
+{ "perspecta": { "workflow": { "version": 1 } }, "nodes": [...], "edges": [...] }
 ```
 
-- `isWorkflowCanvas` checks for `perspectaWorkflow` being an object with a numeric
-  `version` (presence ⇒ it's a workflow; no separate `workflow:true` needed since
-  the key name is now unambiguous).
-- `stampWorkflowMarker` writes `perspectaWorkflow: { version: WORKFLOW_MARKER_VERSION }`.
-- Existing marked canvases (`person-brief.canvas`, `meeting-followup.canvas`) are
-  re-stamped: the old `perspecta:{workflow:true}` key is removed and replaced with
-  `perspectaWorkflow`. A one-time migration handles both the repo example and the
-  vault canvases.
-- Back-compat read: `isWorkflowCanvas` ALSO accepts the legacy
-  `perspecta:{workflow:true}` form (so a not-yet-migrated canvas still works), but
-  `stamp`/migration always writes the new key. This avoids a hard cutover.
+- `isWorkflowCanvas(canvas)` ⇒ true iff `canvas.perspecta?.workflow` is an object
+  (presence of the `workflow` sub-object marks it). A foreign
+  `perspecta: { uid: … }` (no `workflow` sub-key) is correctly NOT a workflow.
+- `stampWorkflowMarker` **merges**: it sets `perspecta.workflow = { version }`
+  while preserving every other key already under `perspecta` (e.g. a foreign
+  `uid`) and every other top-level key. Never replaces the whole `perspecta`
+  object.
+- **Back-compat read:** `isWorkflowCanvas` ALSO accepts the legacy flat forms —
+  `perspecta:{workflow:true}` (Phase 1.5) — so not-yet-migrated canvases still
+  work. `stamp`/migration always writes the new nested shape.
+- **Migration:** the two existing marked canvases (`person-brief.canvas`,
+  `meeting-followup.canvas`) are re-stamped to `perspecta.workflow`, dropping the
+  legacy `workflow:true`/`version` flat fields but preserving nodes/edges/colors.
 
-This is a small, contained change to `packages/core/src/marker.ts` + its tests,
-plus a re-stamp of the two existing canvases. It must land FIRST.
+**Known residual risk (documented):** because the suite shares the top-level
+`perspecta` key with a foreign tool, if that tool ever *replaces* its whole
+`perspecta` object (rather than merging), it would drop our `workflow` sub-key.
+The merge-on-write strategy is the best mitigation while keeping the unified
+`perspecta.*` namespace; a fully-isolated `perspectaWorkflow` key was the
+considered alternative but rejected in favor of the suite namespace. Re-stamping
+(via "Use canvas as workflow" or the index rebuild) restores the marker if lost.
+
+This is a contained change to `packages/core/src/marker.ts` + its tests, plus a
+re-stamp of the two existing canvases. It must land FIRST.
 
 ## Architecture
 
@@ -62,9 +86,10 @@ packages/core/src/
 packages/mcp-server/src/
   server.ts            # NEW tool: workflow_list (scan + summaries)   [optional, see Scope]
 (vault — not repo)
-  .claude/commands/perspecta.md   # NEW slash command
-  _agents/workflows/INDEX.md      # GENERATED registry note
-  CLAUDE.md (or .claude/ pointer) # ambient-awareness pointer
+  .claude/commands/perspecta/workflow.md   # NEW slash command → /perspecta:workflow
+  .claude/commands/ppa/workflow.md         # alias → /ppa:workflow (thin pointer)
+  _agents/workflows/INDEX.md               # GENERATED registry note
+  CLAUDE.md (or .claude/ pointer)          # ambient-awareness pointer
 ```
 
 ### Registry data model (core)
@@ -127,8 +152,9 @@ do_not_edit: true
 ---
 # Perspecta Workflows
 
-Workflows an agent can run in this vault. Invoke with `/perspecta <name>` or by
-walking the canvas via the perspecta-workflow MCP tools.
+Workflows an agent can run in this vault. Invoke with `/perspecta:workflow <name>`
+(alias `/ppa:workflow <name>`) or by walking the canvas via the perspecta-workflow
+MCP tools.
 
 | Workflow | Purpose | When to use |
 |---|---|---|
@@ -144,13 +170,17 @@ workflow index"** AND/OR a small repo script) scans the vault for canvases where
 writes `INDEX.md`. The plugin command is the ergonomic path; the script is the
 CI/agent path.
 
-## The `/perspecta` slash command (Claude Code)
+## The `/perspecta:workflow` slash command (Claude Code)
 
-`.claude/commands/perspecta.md` — a vault command available to any agent session:
+Claude Code namespaces commands by subdirectory: `.claude/commands/perspecta/workflow.md`
+is invoked as **`/perspecta:workflow`**. A thin alias file
+`.claude/commands/ppa/workflow.md` provides **`/ppa:workflow`** (identical
+instructions, or a one-line "see /perspecta:workflow"). Available to any agent
+session in the vault.
 
-- **`/perspecta`** (no arg) → the agent reads `_agents/workflows/INDEX.md` and
-  lists the available workflows with their purpose + when-to-use.
-- **`/perspecta <name>`** → the agent:
+- **`/perspecta:workflow`** (no arg) → the agent reads `_agents/workflows/INDEX.md`
+  and lists the available workflows with their purpose + when-to-use.
+- **`/perspecta:workflow <name>`** → the agent:
   1. resolves `<name>` to a canvas path via the registry,
   2. calls the MCP `workflow_start(canvasPath)` to begin a walk (or, if MCP isn't
      connected, reads the canvas + node-notes directly),
@@ -172,7 +202,7 @@ So an agent *proactively* knows workflows exist and when to use them:
 
   > **Workflows:** This vault defines Perspecta workflows (see
   > `_agents/workflows/INDEX.md`). Before doing multi-step tasks that match a
-  > workflow's "when to use", offer to run it via `/perspecta <name>`.
+  > workflow's "when to use", offer to run it via `/perspecta:workflow <name>`.
 
 - The registry's "When to use" column is what lets the agent match a user request
   to a workflow. Keeping it generated-from-canvas means it stays accurate.
@@ -193,19 +223,22 @@ So an agent *proactively* knows workflows exist and when to use them:
 
 ## Migration
 
-1. Land the marker rename (core) with back-compat read.
-2. Re-stamp the two existing workflow canvases in the vault to the new key
-   (programmatic, preserving nodes/edges/colors).
+1. Land the marker restructure (core) into `perspecta.workflow` with merge + back-compat read.
+2. Re-stamp the two existing workflow canvases in the vault to the nested shape
+   (programmatic, preserving nodes/edges/colors and any foreign `perspecta` keys).
 3. Generate the initial `_agents/workflows/INDEX.md`.
-4. Install `.claude/commands/perspecta.md` and the CLAUDE.md pointer in the vault.
+4. Install `.claude/commands/perspecta/workflow.md` + `ppa/workflow.md` alias and
+   the CLAUDE.md pointer in the vault.
 
 ## Scope
 
 ### In (this phase)
-- Marker key rename (`perspectaWorkflow`) + back-compat read + re-stamp migration.
+- Marker restructure → `perspecta.workflow` (merge-on-write) + back-compat read +
+  re-stamp migration.
 - `registry.ts` (`summarizeWorkflow`, `WorkflowSummary`) in core.
 - Plugin command "Rebuild workflow index" → writes `_agents/workflows/INDEX.md`.
-- `.claude/commands/perspecta.md` slash command (list + run-by-name).
+- `.claude/commands/perspecta/workflow.md` (`/perspecta:workflow`) + `ppa/workflow.md`
+  alias (`/ppa:workflow`) — list + run-by-name.
 - Vault agent-awareness pointer (CLAUDE.md section).
 - Start-node `trigger:` + `purpose` authoring convention.
 
@@ -224,6 +257,6 @@ So an agent *proactively* knows workflows exist and when to use them:
   canvases with the same filename in different folders would collide. The
   generator disambiguates by appending a short path segment if names clash, and
   the registry stores the full path. Acceptable for the current vault (no clash).
-- **MCP connection assumption:** `/perspecta <name>` prefers the MCP
+- **MCP connection assumption:** `/perspecta:workflow <name>` prefers the MCP
   `workflow_*` tools but falls back to reading the canvas + notes directly if the
   server isn't connected in that session. The command file documents both paths.

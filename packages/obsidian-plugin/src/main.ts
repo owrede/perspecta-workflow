@@ -1,5 +1,10 @@
 import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidian";
-import { VERSION, isWorkflowCanvas, type NodeType } from "@perspecta/core";
+import { VERSION, isWorkflowCanvas, renderGenericSkill, summarizeWorkflow, type NodeType, type WorkflowSummary } from "@perspecta/core";
+import { decideGenericSkill } from "./skills/reconcileGenericSkill.js";
+import { planWorkflowSkills, SKILLS_DIR, type SkillSyncPlan } from "./skills/syncWorkflowSkills.js";
+import { upsertPointerBlock } from "./skills/claudePointer.js";
+import { ObsidianFileSystem } from "./fs/ObsidianFileSystem.js";
+import { preloadCanvas } from "./fs/preload.js";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
 import { runValidation } from "./commands/validate.js";
 import { computeRecoloredCanvas } from "./commands/autocolor.js";
@@ -46,6 +51,108 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     this.watcher.onSelfWrite(path);
     await this.app.vault.adapter.write(path, out);
     return out;
+  }
+
+  /** A VaultReader (preload-compatible) backed by the live adapter. */
+  private adapterReader() {
+    return {
+      read: (p: string) => this.app.vault.adapter.read(p),
+      exists: (p: string) => this.app.vault.getAbstractFileByPath(p) != null,
+    };
+  }
+
+  /** Create the parent directory chain for a vault-relative file path if missing. */
+  private async ensureParentDir(filePath: string): Promise<void> {
+    const dir = filePath.slice(0, filePath.lastIndexOf("/"));
+    if (!dir) return;
+    if (!(await this.app.vault.adapter.exists(dir))) {
+      await this.app.vault.adapter.mkdir(dir);
+    }
+  }
+
+  /** Reconcile the bundled, version-stamped generic skill (install/upgrade/never-downgrade). */
+  private async reconcileGenericSkill(): Promise<void> {
+    const path = `${SKILLS_DIR}/perspecta-workflow/SKILL.md`;
+    let installed: string | null = null;
+    try { installed = await this.app.vault.adapter.read(path); } catch { installed = null; }
+    if (decideGenericSkill(installed, VERSION) === "skip") return;
+    await this.ensureParentDir(path);
+    await this.app.vault.adapter.write(path, renderGenericSkill(VERSION));
+  }
+
+  /** Build a summary for every marked canvas in the vault. Best-effort per canvas. */
+  private async collectWorkflowSummaries(): Promise<WorkflowSummary[]> {
+    const summaries: WorkflowSummary[] = [];
+    const canvases = this.app.vault.getFiles().filter((f) => f.extension === "canvas");
+    for (const file of canvases) {
+      try {
+        if (!(await this.isMarkedCanvas(file.path))) continue;
+        const { map } = await preloadCanvas(file.path, this.adapterReader());
+        const fs = new ObsidianFileSystem(map);
+        summaries.push(summarizeWorkflow(file.path, fs));
+      } catch (e) {
+        new Notice(`Perspecta: skipped ${file.path} — ${(e as Error).message}`);
+      }
+    }
+    return summaries;
+  }
+
+  /** Read every existing .claude/skills/<x>/SKILL.md into a path→content map. */
+  private async readExistingSkills(): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    if (!(await this.app.vault.adapter.exists(SKILLS_DIR))) return out;
+    const listing = await this.app.vault.adapter.list(SKILLS_DIR);
+    for (const sub of listing.folders) {
+      const skillFile = `${sub}/SKILL.md`;
+      try {
+        if (await this.app.vault.adapter.exists(skillFile)) {
+          out[skillFile] = await this.app.vault.adapter.read(skillFile);
+        }
+      } catch { /* unreadable → ignore */ }
+    }
+    return out;
+  }
+
+  /** Apply a sync plan: write per-workflow skills, prune orphans, write registry + pointer. */
+  private async applySkillSyncPlan(plan: SkillSyncPlan): Promise<void> {
+    // Guard against silent data loss: two canvases with the same filename map to
+    // the same skill path. Warn rather than overwrite one silently.
+    const seen = new Set<string>();
+    for (const w of plan.writes) {
+      if (seen.has(w.path)) {
+        new Notice(`Perspecta: duplicate workflow name → ${w.path} (one will be overwritten; rename a canvas)`);
+        console.warn(`Perspecta: duplicate skill path in sync plan: ${w.path}`);
+      }
+      seen.add(w.path);
+    }
+    for (const w of plan.writes) {
+      await this.ensureParentDir(w.path);
+      await this.app.vault.adapter.write(w.path, w.content);
+    }
+    for (const d of plan.deletes) {
+      try { await this.app.vault.adapter.remove(d); } catch { /* already gone */ }
+    }
+    await this.ensureParentDir(plan.registryPath);
+    await this.app.vault.adapter.write(plan.registryPath, plan.registryContent);
+
+    const pointerPath = "CLAUDE.md";
+    let existing = "";
+    try { existing = await this.app.vault.adapter.read(pointerPath); } catch { existing = ""; }
+    await this.app.vault.adapter.write(pointerPath, upsertPointerBlock(existing));
+  }
+
+  /** Full regenerate: scan canvases → plan → apply. Best-effort; never throws. */
+  private async rebuildWorkflowSkills(): Promise<number> {
+    try {
+      const summaries = await this.collectWorkflowSummaries();
+      const existing = await this.readExistingSkills();
+      const plan = planWorkflowSkills(summaries, existing);
+      await this.applySkillSyncPlan(plan);
+      return summaries.length;
+    } catch (e) {
+      new Notice(`Perspecta: skill sync failed — ${(e as Error).message}`);
+      return 0;
+    }
   }
 
   private activeCanvas(): TFile | null {
@@ -239,8 +346,24 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: "rebuild-workflow-skills",
+      name: "Rebuild workflow skills",
+      callback: async () => {
+        await this.reconcileGenericSkill();
+        const n = await this.rebuildWorkflowSkills();
+        new Notice(`Perspecta: rebuilt ${n} workflow skill${n === 1 ? "" : "s"}`);
+      },
+    });
+
     // initial badge for whatever is open at load
-    this.app.workspace.onLayoutReady(() => { void this.refreshBadge(); });
+    this.app.workspace.onLayoutReady(() => {
+      void this.refreshBadge();
+      void (async () => {
+        await this.reconcileGenericSkill();
+        await this.rebuildWorkflowSkills();
+      })();
+    });
   }
 
   // ---- choosers ------------------------------------------------------------

@@ -1,5 +1,6 @@
 import { buildGraph } from "./graph.js";
 import type { WorkflowFileSystem } from "./fs.js";
+import type { WorkflowNode } from "./types.js";
 
 export interface WorkflowSummary {
   name: string;        // canvas filename without extension
@@ -28,11 +29,11 @@ function firstNonEmptyLine(body: string): string | undefined {
 export function summarizeWorkflow(canvasPath: string, fs: WorkflowFileSystem): WorkflowSummary {
   const name = workflowName(canvasPath);
   const graph = buildGraph(canvasPath, { fs });
-  let start: { frontmatter?: { trigger?: unknown }; body?: string } | undefined;
+  let start: WorkflowNode | undefined;
   for (const node of graph.nodes.values()) {
     if (node.kind === "start") { start = node; break; }
   }
-  const triggerRaw = start?.frontmatter?.trigger;
+  const triggerRaw: string | undefined = start?.frontmatter?.trigger;
   const purposeLine = start?.body ? firstNonEmptyLine(start.body) : undefined;
   const purpose = purposeLine ?? name;
   const trigger = typeof triggerRaw === "string" && triggerRaw.trim().length > 0

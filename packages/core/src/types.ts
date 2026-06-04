@@ -52,6 +52,7 @@ export const NODE_COLOR_HEX: Partial<Record<NodeType, string>> = {
 export interface WorkflowNodeFrontmatter {
   class: "WorkflowNode";
   node_type: NodeType;
+  trigger?: string;
   inputs?: string[];
   outputs?: string[];
   tool?: string;

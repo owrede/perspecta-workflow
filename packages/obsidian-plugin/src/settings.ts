@@ -6,10 +6,10 @@ import {
   renderInfoBox,
   wiredText,
   wiredToggle,
-  type ChangelogModel,
 } from "perspecta-ui";
 import type PerspectaWorkflowPlugin from "./main.js";
 import { bundledSkillWrites } from "./skills/bundledSkills.js";
+import { CHANGELOG } from "./changelog.generated.js";
 
 export interface PerspectaSettings {
   nodeFolder: string;
@@ -20,18 +20,6 @@ export const DEFAULT_SETTINGS: PerspectaSettings = {
   nodeFolder: "workflows",
   autoColor: true,
 };
-
-// Inline changelog model for the settings Changelog tab. Keep newest first.
-const CHANGELOG: ChangelogModel = [
-  {
-    version: "0.1.0",
-    date: "2026-06-04",
-    changes: [
-      "Settings UI rebuilt on the shared perspecta-ui component library.",
-      "Workflow identity marker, auto-color, set-node-type, formatter/config nodes.",
-    ],
-  },
-];
 
 export class PerspectaSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: PerspectaWorkflowPlugin) {

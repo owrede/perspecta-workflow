@@ -7,3 +7,6 @@ export * from "./linter.js";
 export * from "./context.js";
 export * from "./stepper.js";
 export * from "./marker.js";
+export * from "./semver.js";
+export * from "./registry.js";
+export * from "./skillgen.js";

@@ -19,6 +19,9 @@ ships a filesystem-agnostic core, an MCP server, and an Obsidian plugin.
 - `npm run build -w @perspecta/core` - build core only.
 - `npm run build -w @perspecta/mcp-server` - build MCP server.
 - `npm run build -w perspecta-workflow-plugin` - build Obsidian plugin.
+- `npm run deploy -w perspecta-workflow-plugin` - build + copy the plugin to the
+  local test vault (`scripts/deploy-dev.sh`; `PERSPECTA_VAULT_ROOT`-overridable,
+  defaults to `Perspecta-Dev`, skips gracefully if absent).
 
 ## Conventions
 

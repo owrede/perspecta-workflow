@@ -1,5 +1,19 @@
 import type { WorkflowSummary } from "./registry.js";
 
+/** Collapse a value to a single safe line for use in a YAML frontmatter scalar:
+ *  newlines/CRs become spaces, runs of whitespace collapse, ends trimmed.
+ *  This guarantees the value cannot break out of the frontmatter block
+ *  (e.g. an embedded `\n---\n`) or span multiple lines. */
+function sanitizeInline(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Escape Markdown table cell delimiters so a `|` in user text doesn't
+ *  introduce spurious columns. Also collapses newlines (a cell is one line). */
+function escapeCell(value: string): string {
+  return sanitizeInline(value).replace(/\|/g, "\\|");
+}
+
 /** Minimal frontmatter reader: returns top-level `key: value` string pairs.
  *  Good enough for the flat frontmatter the generators emit (no nesting). */
 export function readSkillFrontmatter(text: string): Record<string, string> {
@@ -20,7 +34,7 @@ export function readSkillFrontmatter(text: string): Record<string, string> {
 export function renderWorkflowSkill(s: WorkflowSummary): string {
   return `---
 name: ${s.name}
-description: ${s.trigger}
+description: ${sanitizeInline(s.trigger)}
 perspecta_generated: true
 perspecta_source: ${s.canvasPath}
 ---
@@ -44,7 +58,7 @@ generated_by: perspecta-workflow
     return header + "_No workflows defined in this vault yet._\n";
   }
   const rows = summaries
-    .map((s) => `| ${s.name} | ${s.purpose} | ${s.trigger} | ${s.nodeCount} | \`${s.canvasPath}\` |`)
+    .map((s) => `| ${escapeCell(s.name)} | ${escapeCell(s.purpose)} | ${escapeCell(s.trigger)} | ${s.nodeCount} | \`${s.canvasPath}\` |`)
     .join("\n");
   return (
     header +

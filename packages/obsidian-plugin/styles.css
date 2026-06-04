@@ -3,3 +3,20 @@
 .perspecta-finding:hover { background: var(--background-modifier-hover); }
 .perspecta-finding-rule { font-weight: 600; }
 .perspecta-finding-ok { color: var(--text-success); padding: 8px; }
+
+.perspecta-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+}

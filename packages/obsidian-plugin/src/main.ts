@@ -1,5 +1,6 @@
 import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidian";
 import { VERSION, isWorkflowCanvas, renderGenericSkill, summarizeWorkflow, type NodeType, type WorkflowSummary } from "@perspecta/core";
+import { PERSPECTA_UI_VERSION } from "perspecta-ui";
 import { decideGenericSkill } from "./skills/reconcileGenericSkill.js";
 import { planWorkflowSkills, SKILLS_DIR, type SkillSyncPlan } from "./skills/syncWorkflowSkills.js";
 import { upsertPointerBlock } from "./skills/claudePointer.js";
@@ -227,7 +228,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   async onload() {
-    console.log(`Perspecta Workflow plugin v${VERSION} loaded`);
+    console.log(`Perspecta Workflow plugin v${VERSION} loaded (perspecta-ui v${PERSPECTA_UI_VERSION})`);
 
     await this.loadSettings();
     this.addSettingTab(new PerspectaSettingTab(this.app, this));

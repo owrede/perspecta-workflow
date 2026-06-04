@@ -6,6 +6,9 @@
     "build": "node esbuild.config.mjs",
     "dev": "node esbuild.config.mjs --watch"
   },
-  "dependencies": { "@perspecta/core": "*" },
+  "dependencies": {
+    "@perspecta/core": "*",
+    "perspecta-ui": "file:../../../perspecta-ui"
+  },
   "devDependencies": { "obsidian": "^1.13.0", "esbuild": "^0.25.0" }
 }

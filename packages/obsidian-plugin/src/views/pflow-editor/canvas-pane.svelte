@@ -35,11 +35,13 @@
     flowEdges,
     onMove,
     onSelect,
+    onConnect,
   }: {
     flowNodes: FlowNode[];
     flowEdges: FlowEdge[];
     onMove: (nodeId: string, x: number, y: number) => void;
     onSelect: (nodeId: string | null) => void;
+    onConnect: (c: { source: string; sourceHandle: string; target: string; targetHandle: string }) => void;
   } = $props();
 
   const PflowNode = PflowNodeRaw as unknown as Component<NodeProps>;
@@ -58,6 +60,25 @@
   function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
     if (targetNode) onMove(targetNode.id, targetNode.position.x, targetNode.position.y);
   }
+
+  // onconnect fires when the user drags between two handles. Forward the
+  // source/target node+port up to the editor, which adds a wire (with full
+  // validation) to the document. We do NOT mutate `edges` locally — the new
+  // wire flows back down as `flowEdges` once the document updates.
+  function handleConnect(c: {
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }) {
+    if (!c.sourceHandle || !c.targetHandle) return;
+    onConnect({
+      source: c.source,
+      sourceHandle: c.sourceHandle,
+      target: c.target,
+      targetHandle: c.targetHandle,
+    });
+  }
 </script>
 
 <div class="pflow-canvas-pane">
@@ -69,6 +90,7 @@
     onnodedragstop={handleNodeDragStop}
     onnodeclick={({ node }) => onSelect(node.id)}
     onpaneclick={() => onSelect(null)}
+    onconnect={handleConnect}
     proOptions={{ hideAttribution: true }}
   >
     <Background />

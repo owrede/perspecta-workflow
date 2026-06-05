@@ -6,7 +6,60 @@
 .perspecta-finding-ok { color: var(--text-success); padding: 8px; }
 
 /* ---- pflow editor ---- */
-.pflow-editor-host { width: 100%; height: 100%; }
+/* The view content must give the editor a real height, or SvelteFlow collapses
+   and only paints a sliver of background in the corner. Force the chain from
+   Obsidian's .view-content down to the SvelteFlow root to fill the leaf. */
+.workspace-leaf-content[data-type="perspecta-pflow-editor"] .view-content {
+  padding: 0;
+  display: flex;
+  min-height: 0;
+}
+.pflow-editor-host {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.pflow-editor-host .svelte-flow {
+  width: 100%;
+  height: 100%;
+}
+
+/* Theme Svelte Flow with Obsidian variables so it follows dark/light mode.
+   xyflow ships light-mode defaults via these --xy-* custom properties. */
+.pflow-editor-host .svelte-flow {
+  --xy-background-color: var(--background-primary);
+  --xy-background-pattern-dots-color: var(--background-modifier-border);
+  --xy-edge-stroke: var(--text-muted);
+  --xy-edge-stroke-selected: var(--interactive-accent);
+  --xy-connectionline-stroke: var(--interactive-accent);
+  --xy-attribution-background-color: transparent;
+  background: var(--background-primary);
+}
+/* Edges */
+.pflow-editor-host .svelte-flow__edge-path {
+  stroke: var(--text-muted);
+}
+.pflow-editor-host .svelte-flow__edge.selected .svelte-flow__edge-path,
+.pflow-editor-host .svelte-flow__edge:hover .svelte-flow__edge-path {
+  stroke: var(--interactive-accent);
+}
+/* Controls (zoom buttons, bottom-left) */
+.pflow-editor-host .svelte-flow__controls {
+  box-shadow: var(--shadow-s, 0 1px 4px rgba(0, 0, 0, 0.2));
+}
+.pflow-editor-host .svelte-flow__controls-button {
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  fill: var(--text-normal);
+}
+.pflow-editor-host .svelte-flow__controls-button:hover {
+  background: var(--background-modifier-hover);
+}
+.pflow-editor-host .svelte-flow__controls-button svg {
+  fill: var(--text-normal);
+}
 .pflow-error {
   margin: 1rem;
   padding: 1rem;

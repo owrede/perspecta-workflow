@@ -4,10 +4,10 @@
 
   let { data }: { data: FlowNodeData } = $props();
 
-  // Vertical geometry (px) used to line each port's connection Handle up with
-  // its label row. Header is ~38px; each port row is 22px tall.
+  // Vertical geometry (px). The header is fixed-height; each port is one row.
+  // A Handle is pinned to the card edge at each port row's vertical center.
   const HEADER = 40;
-  const ROW = 22;
+  const ROW = 24;
   const inTop = (i: number) => HEADER + i * ROW + ROW / 2;
   const outTop = (i: number) => HEADER + (data.inputs.length + i) * ROW + ROW / 2;
 </script>
@@ -21,24 +21,36 @@
   <div class="pflow-node__ports">
     {#each data.inputs as port, i (port.id)}
       <div class="pflow-port pflow-port--in">
-        <span class="pflow-port__dot" class:req={port.required !== false}></span>
         <span class="pflow-port__name">{port.name}</span>
       </div>
-      <Handle type="target" position={Position.Left} id={port.id} style={`top:${inTop(i)}px`} />
+      <!-- The Handle IS the connection dot, pinned to the left edge at this row. -->
+      <Handle
+        type="target"
+        position={Position.Left}
+        id={port.id}
+        class="pflow-handle pflow-handle--in {port.required === false ? '' : 'pflow-handle--req'}"
+        style={`top:${inTop(i)}px`}
+      />
     {/each}
 
     {#each data.outputs as port, i (port.id)}
       <div class="pflow-port pflow-port--out">
         <span class="pflow-port__name">{port.name}</span>
-        <span class="pflow-port__dot"></span>
       </div>
-      <Handle type="source" position={Position.Right} id={port.id} style={`top:${outTop(i)}px`} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id={port.id}
+        class="pflow-handle pflow-handle--out"
+        style={`top:${outTop(i)}px`}
+      />
     {/each}
   </div>
 </div>
 
 <style>
   .pflow-node {
+    position: relative;
     box-sizing: border-box;
     width: 100%;
     background: var(--background-secondary);
@@ -49,7 +61,6 @@
     font-family: var(--font-interface);
     font-size: var(--font-ui-small);
     box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.08));
-    overflow: hidden;
   }
 
   /* kind accent colours (left border) */
@@ -69,9 +80,9 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--size-4-2, 8px);
-    padding: 8px 10px 6px;
     height: 40px;
     box-sizing: border-box;
+    padding: 8px 12px 6px;
     border-bottom: 1px solid var(--background-modifier-border);
   }
   .pflow-node__title {
@@ -91,9 +102,8 @@
   .pflow-port {
     display: flex;
     align-items: center;
-    gap: 6px;
-    height: 22px;
-    padding: 0 10px;
+    height: 24px;
+    padding: 0 14px;
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
   }
@@ -103,13 +113,26 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .pflow-port__dot {
-    flex: none;
-    width: 8px;
-    height: 8px;
+
+  /* The connection handles: real, visible dots sitting ON the card edges.
+     :global is required because xyflow renders the Handle outside this
+     component's scoped-style reach. */
+  :global(.pflow-handle) {
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
-    background: var(--background-modifier-border);
-    border: 1px solid var(--text-faint);
+    background: var(--background-secondary);
+    border: 2px solid var(--text-muted);
+    transition: border-color 80ms ease-out, background 80ms ease-out;
   }
-  .pflow-port__dot.req { background: var(--text-muted); }
+  :global(.pflow-handle--req) {
+    background: var(--text-muted);
+  }
+  :global(.pflow-handle--out) {
+    border-color: var(--interactive-accent, var(--text-accent));
+  }
+  :global(.pflow-handle:hover) {
+    border-color: var(--interactive-accent, var(--text-accent));
+    background: var(--interactive-accent, var(--text-accent));
+  }
 </style>

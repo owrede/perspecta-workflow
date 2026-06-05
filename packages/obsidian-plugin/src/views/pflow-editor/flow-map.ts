@@ -73,3 +73,25 @@ export function applyPromptEdit(doc: PflowDocument, nodeId: string, prompt: stri
     nodes: doc.nodes.map((n) => (n.id === nodeId ? { ...n, prompt } : n)),
   };
 }
+
+/** Add a wire (output port -> input port) created by a mouse drag. Immutable.
+ *  No-ops when the exact wire already exists. Replaces any existing wire into
+ *  the same input port (an input takes one source), so re-connecting an input
+ *  rewires it rather than duplicating. */
+export function applyAddWire(
+  doc: PflowDocument,
+  from: { nodeId: string; portId: string },
+  to: { nodeId: string; portId: string },
+): PflowDocument {
+  const exists = doc.wires.some(
+    (w) =>
+      w.from.nodeId === from.nodeId &&
+      w.from.portId === from.portId &&
+      w.to.nodeId === to.nodeId &&
+      w.to.portId === to.portId,
+  );
+  if (exists) return doc;
+  // drop any wire already feeding this input port (single-source inputs)
+  const kept = doc.wires.filter((w) => !(w.to.nodeId === to.nodeId && w.to.portId === to.portId));
+  return { ...doc, wires: [...kept, { from, to }] };
+}

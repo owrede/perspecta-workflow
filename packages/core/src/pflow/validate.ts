@@ -56,5 +56,35 @@ export function validatePflow(doc: PflowDocument): PflowValidation {
     }
   }
 
+  const splits = doc.nodes.filter((n) => n.kind === "split");
+  const joins = doc.nodes.filter((n) => n.kind === "join");
+  if (splits.length !== joins.length) {
+    errors.push({ rule: "split-join-unbalanced", message: `Found ${splits.length} split node(s) and ${joins.length} join node(s); they must be paired` });
+  }
+  for (const sp of splits) {
+    const arrayInput = sp.inputs.some((p) => p.schema.type === "array");
+    if (!arrayInput) {
+      errors.push({ rule: "split-needs-array", message: `Split node ${sp.id} requires an array-typed input to fan out`, nodeId: sp.id });
+    }
+    if (joins.length > 0 && !reachesJoin(doc, sp.id)) {
+      errors.push({ rule: "split-no-join", message: `Split node ${sp.id} does not reach a join node`, nodeId: sp.id });
+    }
+  }
+
   return { ok: errors.length === 0, errors };
+}
+
+/** True if a join node is reachable downstream of startId via data wires. */
+function reachesJoin(doc: PflowDocument, startId: string): boolean {
+  const seen = new Set<string>();
+  const stack = [startId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const node = nodeById(doc, id);
+    if (node && node.id !== startId && node.kind === "join") return true;
+    for (const w of doc.wires.filter((w) => w.from.nodeId === id)) stack.push(w.to.nodeId);
+  }
+  return false;
 }

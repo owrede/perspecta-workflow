@@ -9,6 +9,16 @@ export function jsString(value: string): string {
   return JSON.stringify(value);
 }
 
+/** Escape a string for safe inclusion as the LITERAL portion of a template
+ *  literal (backticks). Backslashes, backticks, and `${` sequences are escaped
+ *  so user text can never break out or introduce an unintended interpolation. */
+export function escapeTemplate(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\$\{/g, "\\${");
+}
+
 /** Render `export const meta = {...}` as a pure literal. Phases are the
  *  distinct, declaration-ordered `phase` annotations on nodes. */
 export function renderMeta(doc: PflowDocument): string {
@@ -28,10 +38,13 @@ export function renderMeta(doc: PflowDocument): string {
   ].join("\n");
 }
 
-/** A safe JS identifier for a node's output variable. */
-function varName(node: PflowNode): string {
+/** A safe, collision-proof JS identifier for a node's output variable. The
+ *  node's INDEX in `doc.nodes` (unique by construction) guarantees distinct
+ *  identifiers even when two nodes' labels/ids sanitize to the same text. */
+function varName(doc: PflowDocument, node: PflowNode): string {
   const base = (node.label || node.id).replace(/[^A-Za-z0-9_]/g, "_").replace(/^([0-9])/, "_$1");
-  return `${base}_${node.id}`.replace(/[^A-Za-z0-9_]/g, "_");
+  const index = doc.nodes.indexOf(node);
+  return `${base}_${index}`.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
 /** The source variable feeding a node's single input (linear subset). */
@@ -39,7 +52,7 @@ function inputVar(doc: PflowDocument, node: PflowNode): string {
   const wires = inWires(doc, node.id);
   if (wires.length === 0) return "args";
   const src = nodeById(doc, wires[0].from.nodeId)!;
-  return src.kind === "input" ? "args" : varName(src);
+  return src.kind === "input" ? "args" : varName(doc, src);
 }
 
 function emitNode(doc: PflowDocument, node: PflowNode): string {
@@ -47,10 +60,30 @@ function emitNode(doc: PflowDocument, node: PflowNode): string {
     case "input":
       return "";
     case "agent": {
-      const v = varName(node);
-      const prompt = jsString(node.prompt ?? node.label);
+      const v = varName(doc, node);
       const label = jsString(node.label);
-      return `  const ${v} = await agent(${prompt}, { label: ${label} });`;
+      const base = node.prompt ?? node.label;
+      // Thread upstream dataflow into the prompt as labelled context blocks.
+      // Iterate `node.inputs` in DECLARED ORDER (not wire order) so the emitted
+      // text is deterministic. For each input port that has an incoming wire,
+      // interpolate the source variable (`args` for input-sourced ports).
+      const incoming = inWires(doc, node.id);
+      const blocks: string[] = [];
+      for (const port of node.inputs) {
+        const wire = incoming.find((w) => w.to.portId === port.id);
+        if (!wire) continue;
+        const src = nodeById(doc, wire.from.nodeId);
+        if (!src) continue;
+        const srcVar = src.kind === "input" ? "args" : varName(doc, src);
+        blocks.push(`\n\n<context name="${port.name}">\n\${${srcVar}}\n</context>`);
+      }
+      if (blocks.length === 0) {
+        // No woven dataflow — keep the static prompt a plain string literal.
+        return `  const ${v} = await agent(${jsString(base)}, { label: ${label} });`;
+      }
+      // Build a template literal: base prompt followed by context blocks.
+      const tmpl = "`" + escapeTemplate(base) + blocks.join("") + "`";
+      return `  const ${v} = await agent(${tmpl}, { label: ${label} });`;
     }
     case "output": {
       const v = inputVar(doc, node);

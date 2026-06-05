@@ -37,7 +37,7 @@ export const PortZ = z.object({
 export type Port = z.infer<typeof PortZ>;
 
 export const PflowNodeZ = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).regex(/^[A-Za-z0-9_-]+$/),
   kind: z.enum(NODE_KINDS),
   label: z.string(),
   prompt: z.string().optional(),
@@ -58,7 +58,7 @@ export type Wire = z.infer<typeof WireZ>;
 export const PflowDocumentZ = z.object({
   pflowFormatVersion: z.literal(1),
   workflow: z.object({
-    name: z.string().min(1),
+    name: z.string().min(1).regex(/^[A-Za-z0-9_-]+$/),
     description: z.string(),
     args: PortSchemaZ.optional(),
   }),

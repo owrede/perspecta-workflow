@@ -15,7 +15,7 @@ export function schemaCompatible(from: PortSchema, to: PortSchema): boolean {
 }
 
 import type { PflowDocument, Port } from "./schema.js";
-import { nodeById, inWires } from "./topo.js";
+import { nodeById, inWires, outWires } from "./topo.js";
 
 export interface PflowError { rule: string; message: string; nodeId?: string; }
 export interface PflowValidation { ok: boolean; errors: PflowError[]; }
@@ -53,6 +53,16 @@ export function validatePflow(doc: PflowDocument): PflowValidation {
       if (!wired) {
         errors.push({ rule: "required-input-unwired", message: `Required input "${port.name}" of node ${node.id} has no incoming wire`, nodeId: node.id });
       }
+    }
+  }
+
+  for (const node of doc.nodes) {
+    if (node.kind === "script" && outWires(doc, node.id).length > 0) {
+      errors.push({
+        rule: "script-node-downstream-unsupported",
+        message: `Script node ${node.id} has outgoing wires, but script-node outputs are not yet supported in M1 (its body does not bind an output variable). A script node may only be a side-effecting terminal with no downstream consumers.`,
+        nodeId: node.id,
+      });
     }
   }
 

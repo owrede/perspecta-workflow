@@ -50,4 +50,22 @@ describe("parsePflow", () => {
     expect(NODE_KINDS).toContain("verify");
     expect(NODE_KINDS).toContain("script");
   });
+  it("rejects a node id with an unsafe charset (I1)", () => {
+    const bad = {
+      ...MINIMAL,
+      nodes: [
+        { id: "n.1", kind: "input", label: "Input", inputs: [], outputs: [{ id: "o", name: "args", schema: { type: "any" } }] },
+        ...MINIMAL.nodes.slice(1),
+      ],
+    };
+    expect(() => parsePflow(JSON.stringify(bad))).toThrow();
+  });
+  it("rejects a workflow name with a newline (I2)", () => {
+    const bad = { ...MINIMAL, workflow: { name: "demo\nrm -rf", description: "d" } };
+    expect(() => parsePflow(JSON.stringify(bad))).toThrow();
+  });
+  it("rejects a workflow name with a space or slash (I2)", () => {
+    expect(() => parsePflow(JSON.stringify({ ...MINIMAL, workflow: { name: "a b", description: "d" } }))).toThrow();
+    expect(() => parsePflow(JSON.stringify({ ...MINIMAL, workflow: { name: "a/b", description: "d" } }))).toThrow();
+  });
 });

@@ -8,5 +8,9 @@ export const meta = {
   ],
 }
 
-  const Research_research = await agent("Research the topic thoroughly.", { label: "Research" });
-  return Research_research;
+  const Research_1 = await agent(`Research the topic thoroughly.
+
+<context name="topic">
+${args}
+</context>`, { label: "Research" });
+  return Research_1;

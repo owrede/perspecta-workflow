@@ -44,4 +44,22 @@ describe("validatePflow", () => {
     d.nodes[1].outputs[0].schema = { type: "number" };
     expect(validatePflow(d).errors.some((e) => e.rule === "wire-type-mismatch")).toBe(true);
   });
+  it("rejects a script node with a downstream consumer (C2)", () => {
+    const d: PflowDocument = {
+      pflowFormatVersion: 1,
+      workflow: { name: "s", description: "" },
+      nodes: [
+        { id: "in", kind: "input", label: "in", inputs: [], outputs: [{ id: "o", name: "topic", schema: { type: "string" } }] },
+        { id: "s", kind: "script", label: "s", inputs: [{ id: "i", name: "topic", schema: { type: "string" } }], outputs: [{ id: "r", name: "res", schema: { type: "string" } }], config: { body: "const x = 1;" } },
+        { id: "out", kind: "output", label: "out", inputs: [{ id: "i", name: "res", schema: { type: "string" }, required: true }], outputs: [] },
+      ],
+      wires: [
+        { from: { nodeId: "in", portId: "o" }, to: { nodeId: "s", portId: "i" } },
+        { from: { nodeId: "s", portId: "r" }, to: { nodeId: "out", portId: "i" } },
+      ],
+    };
+    const r = validatePflow(d);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.rule === "script-node-downstream-unsupported" && e.nodeId === "s")).toBe(true);
+  });
 });

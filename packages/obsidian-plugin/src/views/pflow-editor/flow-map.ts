@@ -11,8 +11,14 @@ export interface FlowNode {
   id: string;
   type: "pflow";
   position: { x: number; y: number };
+  /** Explicit node width so xyflow doesn't let the node auto-grow to its
+   *  content; the component fills this box. Height is intrinsic. */
+  width: number;
   data: FlowNodeData;
 }
+
+/** Fixed node width (px). The PflowNode component lays out to fill it. */
+export const NODE_WIDTH = 220;
 export interface FlowEdge {
   id: string;
   source: string;
@@ -22,9 +28,10 @@ export interface FlowEdge {
 }
 
 /** Deterministic fallback position for a node without a saved position:
- *  lay out left-to-right by declared index so nodes never stack at 0,0. */
+ *  a staggered left-to-right cascade so nodes never stack at 0,0 and the
+ *  wires between them stay readable before the user arranges them. */
 function fallbackPosition(index: number): { x: number; y: number } {
-  return { x: index * 260, y: 80 };
+  return { x: index * (NODE_WIDTH + 80), y: 60 + (index % 2) * 140 };
 }
 
 export function toFlowNodes(doc: PflowDocument): FlowNode[] {
@@ -35,6 +42,7 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
       id: n.id,
       type: "pflow" as const,
       position: pos ? { x: pos.x, y: pos.y } : fallbackPosition(i),
+      width: NODE_WIDTH,
       data: { kind: n.kind, label: n.label, prompt: n.prompt, inputs: n.inputs, outputs: n.outputs },
     };
   });

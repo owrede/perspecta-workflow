@@ -5,6 +5,17 @@
 .perspecta-finding-rule { font-weight: 600; }
 .perspecta-finding-ok { color: var(--text-success); padding: 8px; }
 
+/* ---- pflow editor ---- */
+.pflow-editor-host { width: 100%; height: 100%; }
+.pflow-error {
+  margin: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--background-modifier-error-border, var(--background-modifier-border));
+  border-radius: var(--radius-m, 6px);
+  color: var(--text-error, var(--text-normal));
+  background: var(--background-secondary);
+}
+
 /* ---- perspecta-ui shared styles ---- */
 /* perspecta-ui — shared component styles. Obsidian CSS variables only. */
 

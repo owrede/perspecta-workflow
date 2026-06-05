@@ -12,6 +12,13 @@ export function resetSessions(): void {
   sessions.clear();
 }
 
+/** Look up a live session or fail with a consistent error. */
+function requireSession(session: string): Stepper {
+  const s = sessions.get(session);
+  if (!s) throw new Error(`Unknown session ${session}`);
+  return s;
+}
+
 export const handlers = {
   async workflow_lint({ canvas, fix = false }: { canvas: string; fix?: boolean }) {
     const graph = buildGraph(canvas, { fs });
@@ -35,9 +42,7 @@ export const handlers = {
   },
 
   async workflow_current({ session }: { session: string }) {
-    const s = sessions.get(session);
-    if (!s) throw new Error(`Unknown session ${session}`);
-    return s.current();
+    return requireSession(session).current();
   },
 
   async workflow_advance({
@@ -49,22 +54,26 @@ export const handlers = {
     edge?: string;
     outputs?: Record<string, unknown>;
   }) {
-    const s = sessions.get(session);
-    if (!s) throw new Error(`Unknown session ${session}`);
+    const s = requireSession(session);
     s.advance({ edge, outputs });
-    return { ok: true, ...s.status() };
+    const status = s.status();
+    // Free the session once the run reaches its end so finished walks don't leak.
+    if (status.atEnd) sessions.delete(session);
+    return { ok: true, ...status };
   },
 
   async workflow_context({ session }: { session: string }) {
-    const s = sessions.get(session);
-    if (!s) throw new Error(`Unknown session ${session}`);
-    return s.context();
+    return requireSession(session).context();
   },
 
   async workflow_status({ session }: { session: string }) {
-    const s = sessions.get(session);
-    if (!s) throw new Error(`Unknown session ${session}`);
-    return s.status();
+    return requireSession(session).status();
+  },
+
+  /** Release a session's resources. Idempotent: returns `{ ok: true, ended }`
+   *  where `ended` is false if the session was already gone. */
+  async workflow_end({ session }: { session: string }) {
+    return { ok: true, ended: sessions.delete(session) };
   },
 };
 
@@ -136,6 +145,16 @@ export function buildServer(): McpServer {
       inputSchema: { session: z.string() },
     },
     async ({ session }) => toContent(await handlers.workflow_status({ session })),
+  );
+
+  server.registerTool(
+    "workflow_end",
+    {
+      description:
+        "Release a finished or abandoned workflow session. Call when a run is done to free server resources; advancing to an end node frees the session automatically.",
+      inputSchema: { session: z.string() },
+    },
+    async ({ session }) => toContent(await handlers.workflow_end({ session })),
   );
 
   return server;

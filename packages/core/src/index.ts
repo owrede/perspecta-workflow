@@ -1,6 +1,7 @@
 export const VERSION = "0.1.0";
 export * from "./types.js";
 export * from "./fs.js";
+export * from "./frontmatter.js";
 export * from "./canvas.js";
 export * from "./graph.js";
 export * from "./linter.js";
@@ -10,3 +11,8 @@ export * from "./marker.js";
 export * from "./semver.js";
 export * from "./registry.js";
 export * from "./skillgen.js";
+export * from "./pflow/schema.js";
+export * from "./pflow/validate.js";
+export * from "./pflow/topo.js";
+export * from "./codegen/emit-lint.js";
+export * from "./codegen/scriptgen.js";

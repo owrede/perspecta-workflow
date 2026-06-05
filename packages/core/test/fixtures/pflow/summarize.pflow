@@ -1,0 +1,13 @@
+{
+  "pflowFormatVersion": 1,
+  "workflow": { "name": "summarize", "description": "Summarize a topic" },
+  "nodes": [
+    { "id": "in", "kind": "input", "label": "Input", "inputs": [], "outputs": [{ "id": "o", "name": "topic", "schema": { "type": "string" } }] },
+    { "id": "research", "kind": "agent", "label": "Research", "phase": "Research", "prompt": "Research the topic thoroughly.", "inputs": [{ "id": "i", "name": "topic", "schema": { "type": "string" }, "required": true }], "outputs": [{ "id": "r", "name": "notes", "schema": { "type": "string" } }] },
+    { "id": "out", "kind": "output", "label": "Output", "inputs": [{ "id": "i", "name": "notes", "schema": { "type": "string" }, "required": true }], "outputs": [] }
+  ],
+  "wires": [
+    { "from": { "nodeId": "in", "portId": "o" }, "to": { "nodeId": "research", "portId": "i" } },
+    { "from": { "nodeId": "research", "portId": "r" }, "to": { "nodeId": "out", "portId": "i" } }
+  ]
+}

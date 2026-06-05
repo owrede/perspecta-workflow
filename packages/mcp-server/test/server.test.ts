@@ -32,4 +32,25 @@ describe("MCP handlers", () => {
       handlers.workflow_current({ session: "does-not-exist" }),
     ).rejects.toThrow("Unknown session");
   });
+
+  it("frees the session automatically once a run reaches its end node", async () => {
+    resetSessions();
+    const started = await handlers.workflow_start({ canvas: join(FIX, "linear.canvas") });
+    const session = started.session!;
+    // start -> prompt
+    await handlers.workflow_advance({ session, outputs: { topic: "x" } });
+    // prompt -> end (atEnd); the session should be evicted here
+    const last = await handlers.workflow_advance({ session });
+    expect(last.atEnd).toBe(true);
+    await expect(handlers.workflow_status({ session })).rejects.toThrow("Unknown session");
+  });
+
+  it("workflow_end releases a live session and is idempotent", async () => {
+    resetSessions();
+    const started = await handlers.workflow_start({ canvas: join(FIX, "linear.canvas") });
+    const session = started.session!;
+    expect(await handlers.workflow_end({ session })).toEqual({ ok: true, ended: true });
+    expect(await handlers.workflow_end({ session })).toEqual({ ok: true, ended: false });
+    await expect(handlers.workflow_current({ session })).rejects.toThrow("Unknown session");
+  });
 });

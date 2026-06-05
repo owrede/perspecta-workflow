@@ -2,9 +2,19 @@
   "name": "perspecta-workflow-plugin",
   "version": "0.1.0",
   "type": "module",
+  "main": "main.js",
   "scripts": {
-    "build": "node esbuild.config.mjs",
-    "dev": "node esbuild.config.mjs --watch"
+    "build": "npm run changelog && node esbuild.config.mjs",
+    "dev": "npm run changelog && node esbuild.config.mjs --watch",
+    "deploy": "npm run build && bash scripts/deploy-dev.sh",
+    "changelog": "node scripts/gen-changelog.mjs",
+    "changelog:check": "node scripts/gen-changelog.mjs --check",
+    "test": "vitest run test",
+    "test:watch": "vitest test",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@perspecta/core": "*",

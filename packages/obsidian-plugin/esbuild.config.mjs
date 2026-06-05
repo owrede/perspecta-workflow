@@ -1,4 +1,6 @@
 import esbuild from "esbuild";
+import sveltePlugin from "esbuild-svelte";
+import { sveltePreprocess } from "svelte-preprocess";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -40,6 +42,14 @@ const ctx = await esbuild.context({
   outfile: "main.js",
   sourcemap: watch ? "inline" : false,
   logLevel: "info",
+  conditions: ["svelte", "browser"],
+  mainFields: ["svelte", "browser", "module", "main"],
+  plugins: [
+    sveltePlugin({
+      preprocess: sveltePreprocess(),
+      compilerOptions: { css: "injected" },
+    }),
+  ],
 });
 
 if (watch) { await ctx.watch(); } else { await ctx.rebuild(); await ctx.dispose(); }

@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
@@ -14,5 +16,8 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.8",
     "tsx": "^4.22.4"
+  },
+  "overrides": {
+    "svelte": "5.55.8"
   }
 }

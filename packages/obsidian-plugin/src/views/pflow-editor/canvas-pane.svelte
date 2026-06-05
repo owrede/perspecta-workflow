@@ -45,13 +45,13 @@
   const PflowNode = PflowNodeRaw as unknown as Component<NodeProps>;
   const nodeTypes = { pflow: PflowNode };
 
-  let nodes = $state<Node[]>([]);
-  let edges = $state<Edge[]>([]);
-
-  $effect(() => {
-    nodes = flowNodes as unknown as Node[];
-    edges = flowEdges as unknown as Edge[];
-  });
+  // Initialize with the mapped data at construction time. SvelteFlow's store
+  // reads `nodes`/`edges` while it is being created, so they must already be
+  // populated arrays — seeding them later via $effect leaves the store reading
+  // uninitialized reactive state and throws ("exclude.includes is not a
+  // function") during construction.
+  let nodes = $state<Node[]>(flowNodes as unknown as Node[]);
+  let edges = $state<Edge[]>(flowEdges as unknown as Edge[]);
 
   // onnodedragstop payload is { targetNode, nodes, event }; targetNode
   // is the dragged node (or null if the gesture had no single target).

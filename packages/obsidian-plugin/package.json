@@ -20,7 +20,7 @@
     "@perspecta/core": "*",
     "perspecta-ui": "file:./vendor/perspecta-ui",
     "@xyflow/svelte": "1.5.2",
-    "svelte": "5.55.8"
+    "svelte": "5.56.2"
   },
   "devDependencies": {
     "obsidian": "^1.13.0",

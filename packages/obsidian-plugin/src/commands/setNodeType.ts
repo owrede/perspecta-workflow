@@ -32,19 +32,20 @@ export function noteFilePathForNode(canvasJson: string, nodeId: string): string 
   return null;
 }
 
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+// CRLF-tolerant so a note written with Windows newlines is still edited.
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 /**
  * Surgically set `node_type` in a node-note's frontmatter, preserving every
  * other frontmatter line and the body verbatim. Replaces an existing
  * `node_type:` line if present, otherwise inserts one after the opening `---`.
- * Throws if the note has no frontmatter block.
+ * Throws if the note has no frontmatter block. The rewritten frontmatter is
+ * re-emitted with `\n` line endings.
  */
 export function setNodeTypeInFrontmatter(noteText: string, nodeType: NodeType): string {
   const m = noteText.match(FRONTMATTER_RE);
   if (!m) throw new Error("Node note has no frontmatter block");
-  const fmBody = m[1];
-  const lines = fmBody.split("\n");
+  const lines = m[1].split(/\r?\n/);
   const idx = lines.findIndex((l) => /^node_type\s*:/.test(l));
   if (idx >= 0) {
     lines[idx] = `node_type: ${nodeType}`;

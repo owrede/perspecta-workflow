@@ -39,6 +39,14 @@ export class ColorWatcher {
     this.timers.set(canvasPath, id);
   }
 
+  /** Cancel every pending debounced recolor. Call from the plugin's
+   *  `onunload` so a scheduled write can't fire after the plugin is torn down. */
+  dispose(): void {
+    for (const id of this.timers.values()) this.deps.clearScheduled(id);
+    this.timers.clear();
+    this.suppress.clear();
+  }
+
   private async run(canvasPath: string): Promise<void> {
     try {
       if (!(await this.deps.isMarked(canvasPath))) return;

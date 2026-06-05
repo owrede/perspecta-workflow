@@ -44,6 +44,15 @@ describe("ColorWatcher", () => {
     expect(recolored).toEqual(["wf.canvas"]);
   });
 
+  it("dispose() cancels a pending debounced recolor", async () => {
+    const { watcher, recolored, tick } = makeHarness(new Set(["wf.canvas"]));
+    watcher.onCanvasTouched("wf.canvas");
+    watcher.dispose();
+    tick(400);
+    await Promise.resolve();
+    expect(recolored).toEqual([]); // the scheduled recolor was cancelled
+  });
+
   it("suppresses the self-write modify that follows a recolor", async () => {
     const { watcher, recolored, tick } = makeHarness(new Set(["wf.canvas"]));
     watcher.onCanvasTouched("wf.canvas");

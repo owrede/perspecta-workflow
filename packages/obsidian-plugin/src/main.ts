@@ -306,6 +306,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   onunload() {
+    this.watcher?.dispose();
     for (const dispose of this.menuDisposers.values()) dispose();
     this.menuDisposers.clear();
     this.app.workspace.iterateAllLeaves((l) => workflowBadge.detach(l));

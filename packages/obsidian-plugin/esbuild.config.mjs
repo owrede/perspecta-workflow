@@ -1,6 +1,5 @@
 import esbuild from "esbuild";
 import sveltePlugin from "esbuild-svelte";
-import { sveltePreprocess } from "svelte-preprocess";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -45,8 +44,11 @@ const ctx = await esbuild.context({
   conditions: ["svelte", "browser"],
   mainFields: ["svelte", "browser", "module", "main"],
   plugins: [
+    // No svelte-preprocess: components use plain `lang="ts"` (no SCSS/Less), and
+    // esbuild-svelte compiles TypeScript natively. svelte-preprocess additionally
+    // type-checks, which fails on third-party .svelte files under node_modules
+    // (TS6059 rootDir) — esbuild bundling + the separate `tsc` gate cover us.
     sveltePlugin({
-      preprocess: sveltePreprocess(),
       compilerOptions: { css: "injected" },
     }),
   ],

@@ -49,3 +49,19 @@ export function toFlowEdges(doc: PflowDocument): FlowEdge[] {
     targetHandle: w.to.portId,
   }));
 }
+
+/** Return a new document with `nodeId`'s saved position upserted. Immutable. */
+export function applyNodePosition(doc: PflowDocument, nodeId: string, x: number, y: number): PflowDocument {
+  const editor = doc.editor ?? { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] };
+  const nodePositions = editor.nodePositions.filter((p) => p.nodeId !== nodeId);
+  nodePositions.push({ nodeId, x, y });
+  return { ...doc, editor: { ...editor, nodePositions } };
+}
+
+/** Return a new document with `nodeId`'s prompt set. Immutable. */
+export function applyPromptEdit(doc: PflowDocument, nodeId: string, prompt: string): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => (n.id === nodeId ? { ...n, prompt } : n)),
+  };
+}

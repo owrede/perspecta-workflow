@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toFlowNodes, toFlowEdges } from "../src/views/pflow-editor/flow-map.js";
+import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit } from "../src/views/pflow-editor/flow-map.js";
 import type { PflowDocument } from "@perspecta/core";
 
 const DOC: PflowDocument = {
@@ -44,5 +44,27 @@ describe("toFlowEdges", () => {
   it("gives every edge a stable unique id", () => {
     const edges = toFlowEdges(DOC);
     expect(edges[0].id).toBe("in:o->ag:i");
+  });
+});
+
+describe("applyNodePosition", () => {
+  it("upserts a node position in editor.nodePositions without mutating the input", () => {
+    const next = applyNodePosition(DOC, "ag", 300, 90);
+    expect(next.editor!.nodePositions).toContainEqual({ nodeId: "ag", x: 300, y: 90 });
+    expect(DOC.editor!.nodePositions.some((p) => p.nodeId === "ag")).toBe(false);
+  });
+  it("overwrites an existing saved position", () => {
+    const next = applyNodePosition(DOC, "in", 50, 60);
+    const positions = next.editor!.nodePositions.filter((p) => p.nodeId === "in");
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toEqual({ nodeId: "in", x: 50, y: 60 });
+  });
+});
+
+describe("applyPromptEdit", () => {
+  it("sets a node's prompt immutably", () => {
+    const next = applyPromptEdit(DOC, "ag", "new prompt");
+    expect(next.nodes.find((n) => n.id === "ag")!.prompt).toBe("new prompt");
+    expect(DOC.nodes.find((n) => n.id === "ag")!.prompt).toBe("p");
   });
 });

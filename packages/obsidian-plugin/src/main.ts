@@ -1,5 +1,5 @@
 import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidian";
-import { VERSION, isWorkflowCanvas, type NodeType } from "@perspecta/core";
+import { VERSION, isWorkflowCanvas, generateClaudeCodeWorkflow, type NodeType, type PflowDocument } from "@perspecta/core";
 import { PERSPECTA_UI_VERSION, PerspectaSettingsStore, CornerBadge } from "perspecta-ui";
 import { WorkflowSkillSyncService } from "./skills/WorkflowSkillSyncService.js";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
@@ -11,6 +11,7 @@ import { ColorWatcher } from "./live/colorWatcher.js";
 import { attachNodeMenu } from "./live/nodeMenu.js";
 import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
+import { PflowEditorView, VIEW_TYPE_PFLOW } from "./views/pflow-editor/view.js";
 
 interface NoteFileRef { id: string; file: string; }
 
@@ -93,6 +94,26 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     new Notice(`Perspecta: node_type set to ${nodeType}`);
   }
 
+  /** Compile the given pflow document to a native Claude Code workflow and
+   *  write it to `.claude/workflows/<name>.js`. */
+  private async exportClaudeCodeWorkflow(doc: PflowDocument): Promise<void> {
+    try {
+      const code = generateClaudeCodeWorkflow(doc);
+      const dir = ".claude/workflows";
+      if (!(await this.app.vault.adapter.exists(".claude"))) {
+        await this.app.vault.adapter.mkdir(".claude");
+      }
+      if (!(await this.app.vault.adapter.exists(dir))) {
+        await this.app.vault.adapter.mkdir(dir);
+      }
+      const path = `${dir}/${doc.workflow.name}.js`;
+      await this.app.vault.adapter.write(path, code);
+      new Notice(`Perspecta Workflow: exported ${path}`);
+    } catch (e) {
+      new Notice(`Perspecta Workflow: export failed — ${(e as Error).message}`);
+    }
+  }
+
   // ---- badge + status + node menu -----------------------------------------
 
   private async refreshBadge(): Promise<void> {
@@ -141,6 +162,8 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     this.skills = new WorkflowSkillSyncService(this.app.vault.adapter, (msg) => new Notice(msg));
     this.addSettingTab(new PerspectaSettingTab(this.app, this));
     this.registerView(VIEW_TYPE_PERSPECTA, (leaf: WorkspaceLeaf) => new ResultsView(leaf));
+    this.registerView(VIEW_TYPE_PFLOW, (leaf: WorkspaceLeaf) => new PflowEditorView(leaf));
+    this.registerExtensions(["pflow"], VIEW_TYPE_PFLOW);
 
     this.statusEl = this.addStatusBarItem();
 
@@ -271,6 +294,20 @@ export default class PerspectaWorkflowPlugin extends Plugin {
         await this.skills.reconcileGenericSkill();
         const n = await this.skills.rebuildWorkflowSkills(this.canvasPaths());
         new Notice(`Perspecta: rebuilt ${n} workflow skill${n === 1 ? "" : "s"}`);
+      },
+    });
+
+    this.addCommand({
+      id: "export-claude-code-workflow",
+      name: "Export workflow to Claude Code",
+      checkCallback: (checking: boolean) => {
+        const view = this.app.workspace.getActiveViewOfType(PflowEditorView);
+        const doc = view?.getDocument();
+        if (!doc) return false;
+        if (!checking) {
+          void this.exportClaudeCodeWorkflow(doc);
+        }
+        return true;
       },
     });
 

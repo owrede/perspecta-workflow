@@ -33,6 +33,7 @@
     type Node,
     type Edge,
     type NodeProps,
+    type EdgeProps,
   } from "@xyflow/svelte";
   import type { Component } from "svelte";
   import type { NodeKind } from "@perspecta/core";
@@ -40,6 +41,7 @@
   // a .css side-effect import to a separate, never-loaded main.css. It is
   // concatenated into the plugin's styles.css by esbuild.config.mjs instead.
   import PflowNodeRaw from "./PflowNode.svelte";
+  import PflowEdgeRaw from "./PflowEdge.svelte";
   import FlowControls from "./flow-controls.svelte";
   import type { FlowNode, FlowEdge } from "./flow-map.js";
 
@@ -65,6 +67,8 @@
 
   const PflowNode = PflowNodeRaw as unknown as Component<NodeProps>;
   const nodeTypes = { pflow: PflowNode };
+  const PflowEdge = PflowEdgeRaw as unknown as Component<EdgeProps>;
+  const edgeTypes = { pflow: PflowEdge };
 
   let nodes = $state<Node[]>(flowNodes as unknown as Node[]);
   let edges = $state<Edge[]>(flowEdges as unknown as Edge[]);
@@ -162,6 +166,7 @@
     bind:nodes
     bind:edges
     {nodeTypes}
+    {edgeTypes}
     fitView
     onnodedragstop={handleNodeDragStop}
     onselectionchange={handleSelectionChange}

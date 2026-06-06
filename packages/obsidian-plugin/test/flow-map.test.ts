@@ -50,6 +50,10 @@ describe("toFlowEdges", () => {
     const edges = toFlowEdges(DOC);
     expect(edges[0].markerEnd).toEqual({ type: MarkerType.ArrowClosed, width: 24, height: 24 });
   });
+  it("uses the custom pflow edge type (stick-out routing)", () => {
+    const edges = toFlowEdges(DOC);
+    expect(edges[0].type).toBe("pflow");
+  });
 });
 
 describe("applyNodePosition", () => {

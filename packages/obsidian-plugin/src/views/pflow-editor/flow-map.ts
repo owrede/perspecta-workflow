@@ -23,6 +23,9 @@ export interface FlowNode {
 export const NODE_WIDTH = 220;
 export interface FlowEdge {
   id: string;
+  /** Custom edge renderer (PflowEdge): guarantees a horizontal stick off each
+   *  handle so near-straight and loop-back edges stay readable. */
+  type: "pflow";
   source: string;
   target: string;
   sourceHandle: string;
@@ -55,6 +58,7 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
 export function toFlowEdges(doc: PflowDocument): FlowEdge[] {
   return doc.wires.map((w) => ({
     id: `${w.from.nodeId}:${w.from.portId}->${w.to.nodeId}:${w.to.portId}`,
+    type: "pflow" as const,
     source: w.from.nodeId,
     target: w.to.nodeId,
     sourceHandle: w.from.portId,

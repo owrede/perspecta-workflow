@@ -8,21 +8,31 @@ import { dirname, join } from "node:path";
 const watch = process.argv.includes("--watch");
 const require = createRequire(import.meta.url);
 
-// Concatenate perspecta-ui's shared CSS into the plugin's styles.css so the
-// shared `perspecta-ui-*` classes ship with the plugin and stay in sync.
-// The plugin's own styles live in styles.base.css; styles.css is generated.
+// Concatenate the @xyflow/svelte stylesheet + perspecta-ui's shared CSS into
+// the plugin's styles.css so they ship with the plugin (Obsidian auto-loads
+// styles.css). The xyflow CSS must be loaded here, NOT via a `import
+// "@xyflow/svelte/dist/style.css"` side-effect in a .svelte file: esbuild
+// routes that import to a SEPARATE main.css that Obsidian never loads, leaving
+// the canvas completely unstyled (no node sizing, no handle placement, light
+// background). The plugin's own styles live in styles.base.css; styles.css is
+// generated.
 function buildStyles() {
   const here = fileURLToPath(new URL(".", import.meta.url));
   // Resolve perspecta-ui regardless of where npm hoisted the symlink.
   const uiPkg = require.resolve("perspecta-ui/package.json");
   const sharedPath = join(dirname(uiPkg), "styles", "perspecta-ui.css");
+  const xyflowPath = require.resolve("@xyflow/svelte/dist/style.css");
   const basePath = `${here}styles.base.css`;
   const outPath = `${here}styles.css`;
+  const xyflow = existsSync(xyflowPath) ? readFileSync(xyflowPath, "utf8") : "";
   const shared = existsSync(sharedPath) ? readFileSync(sharedPath, "utf8") : "";
   const base = existsSync(basePath) ? readFileSync(basePath, "utf8") : "";
   writeFileSync(
     outPath,
-    `/* GENERATED — edit styles.base.css; perspecta-ui CSS is concatenated below. */\n` +
+    `/* GENERATED — edit styles.base.css; xyflow + perspecta-ui CSS concatenated below. */\n` +
+      "\n/* ---- @xyflow/svelte base styles ---- */\n" +
+      xyflow +
+      "\n/* ---- plugin styles (styles.base.css) ---- */\n" +
       base +
       "\n/* ---- perspecta-ui shared styles ---- */\n" +
       shared,

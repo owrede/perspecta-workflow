@@ -5,9 +5,9 @@
 .perspecta-finding-ok { color: var(--text-success); padding: 8px; }
 
 /* ---- pflow editor ---- */
-/* The view content must give the editor a real height, or SvelteFlow collapses
-   and only paints a sliver of background in the corner. Force the chain from
-   Obsidian's .view-content down to the SvelteFlow root to fill the leaf. */
+/* Height chain: the editor must get a real pixel height or SvelteFlow collapses
+   and paints only a corner sliver. Anchor it on .view-content (flex) down to
+   the host; the editor grid + .pflow-canvas-pane (min-height:400px) finish it. */
 .workspace-leaf-content[data-type="perspecta-pflow-editor"] .view-content {
   padding: 0;
   display: flex;
@@ -19,22 +19,12 @@
   height: 100%;
   min-height: 0;
 }
-.pflow-editor-host .svelte-flow {
-  width: 100%;
-  height: 100%;
-}
 
-/* Theme Svelte Flow with Obsidian variables so it follows dark/light mode.
-   xyflow ships light-mode defaults via these --xy-* custom properties. */
-.pflow-editor-host .svelte-flow {
-  --xy-background-color: var(--background-primary);
-  --xy-background-pattern-dots-color: var(--background-modifier-border);
-  --xy-edge-stroke: var(--text-muted);
-  --xy-edge-stroke-selected: var(--interactive-accent);
-  --xy-connectionline-stroke: var(--interactive-accent);
-  --xy-attribution-background-color: transparent;
-  background: var(--background-primary);
-}
+/* We do NOT override --xy-* variables or set a background on .svelte-flow.
+   The flow root stays transparent; the themed surface is painted by the
+   .pflow-canvas-pane wrapper and the <Background bgColor> prop, so the canvas
+   follows Obsidian's dark/light mode. (vault-memory pattern.) */
+
 /* Edges */
 .pflow-editor-host .svelte-flow__edge-path {
   stroke: var(--text-muted);

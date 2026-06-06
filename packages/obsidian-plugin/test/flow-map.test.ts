@@ -134,8 +134,10 @@ describe("defaultPortsForKind", () => {
 });
 
 describe("COMPILABLE_KINDS", () => {
-  it("is exactly the four kinds codegen supports", () => {
-    expect(COMPILABLE_KINDS).toEqual(["input", "agent", "output", "loop"]);
+  it("is all ten kinds now that codegen supports every kind", () => {
+    expect(COMPILABLE_KINDS).toEqual([
+      "input", "output", "agent", "split", "join", "loop", "verify", "synthesize", "branch", "script",
+    ]);
   });
 });
 

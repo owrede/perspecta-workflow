@@ -1,4 +1,5 @@
 import { MarkerType } from "@xyflow/system";
+import { NODE_KINDS } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 
 export interface FlowNodeData {
@@ -100,9 +101,11 @@ export function applyAddWire(
   return { ...doc, wires: [...kept, { from, to }] };
 }
 
-/** Kinds the M1 codegen can compile. The editor offers all NODE_KINDS but
- *  ghosts the rest, since they would build un-exportable graphs. */
-export const COMPILABLE_KINDS: NodeKind[] = ["input", "agent", "output", "loop"];
+/** Kinds the codegen can compile — now ALL of them. Kept as a named export
+ *  (rather than inlining NODE_KINDS at call sites) so the add-menu/inspector
+ *  "ghosting" mechanism stays in place if a future kind is added that codegen
+ *  doesn't yet cover. */
+export const COMPILABLE_KINDS: NodeKind[] = [...NODE_KINDS];
 
 /** Default input/output ports for a freshly-created (or re-kinded) node.
  *  input: source only; output: sink only; everything else: one in + one out. */

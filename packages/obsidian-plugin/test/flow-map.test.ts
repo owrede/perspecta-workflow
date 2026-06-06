@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { MarkerType } from "@xyflow/system";
 import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit } from "../src/views/pflow-editor/flow-map.js";
 import type { PflowDocument } from "@perspecta/core";
 
@@ -45,6 +46,10 @@ describe("toFlowEdges", () => {
     const edges = toFlowEdges(DOC);
     expect(edges[0].id).toBe("in:o->ag:i");
   });
+  it("gives every edge a target arrowhead marker sized for visibility", () => {
+    const edges = toFlowEdges(DOC);
+    expect(edges[0].markerEnd).toEqual({ type: MarkerType.ArrowClosed, width: 24, height: 24 });
+  });
 });
 
 describe("applyNodePosition", () => {
@@ -66,5 +71,155 @@ describe("applyPromptEdit", () => {
     const next = applyPromptEdit(DOC, "ag", "new prompt");
     expect(next.nodes.find((n) => n.id === "ag")!.prompt).toBe("new prompt");
     expect(DOC.nodes.find((n) => n.id === "ag")!.prompt).toBe("p");
+  });
+});
+
+import { applyAddWire } from "../src/views/pflow-editor/flow-map.js";
+
+describe("applyAddWire", () => {
+  it("adds a new wire immutably", () => {
+    const next = applyAddWire(DOC, { nodeId: "ag", portId: "r" }, { nodeId: "in", portId: "x" });
+    // DOC has 1 wire (in.o->ag.i); adding ag.r->in.x yields 2
+    expect(next.wires).toHaveLength(2);
+    expect(DOC.wires).toHaveLength(1); // original untouched
+    expect(next.wires.some((w) => w.from.nodeId === "ag" && w.to.nodeId === "in")).toBe(true);
+  });
+  it("no-ops when the exact wire already exists", () => {
+    const next = applyAddWire(DOC, { nodeId: "in", portId: "o" }, { nodeId: "ag", portId: "i" });
+    expect(next).toBe(DOC);
+  });
+  it("replaces an existing wire into the same input port (single-source inputs)", () => {
+    // re-wire ag.i from a different source
+    const next = applyAddWire(DOC, { nodeId: "ag", portId: "r" }, { nodeId: "ag", portId: "i" });
+    const intoAgI = next.wires.filter((w) => w.to.nodeId === "ag" && w.to.portId === "i");
+    expect(intoAgI).toHaveLength(1);
+    expect(intoAgI[0].from.nodeId).toBe("ag");
+  });
+});
+
+import {
+  defaultPortsForKind,
+  COMPILABLE_KINDS,
+  applyAddNode,
+  applyDeleteNode,
+  applyLabelEdit,
+  orphanedWiresForKind,
+  applyKindChange,
+  applyWorkflowMeta,
+  applyArgDefault,
+} from "../src/views/pflow-editor/flow-map.js";
+
+describe("defaultPortsForKind", () => {
+  it("agent has one in and one out", () => {
+    expect(defaultPortsForKind("agent")).toEqual({
+      inputs: [{ id: "in", name: "in", schema: { type: "any" }, required: true }],
+      outputs: [{ id: "out", name: "out", schema: { type: "any" } }],
+    });
+  });
+  it("input has no inputs, one out", () => {
+    const p = defaultPortsForKind("input");
+    expect(p.inputs).toEqual([]);
+    expect(p.outputs).toHaveLength(1);
+  });
+  it("output has one in, no outputs", () => {
+    const p = defaultPortsForKind("output");
+    expect(p.inputs).toHaveLength(1);
+    expect(p.outputs).toEqual([]);
+  });
+  it("loop has one in and one out", () => {
+    const p = defaultPortsForKind("loop");
+    expect(p.inputs).toHaveLength(1);
+    expect(p.outputs).toHaveLength(1);
+  });
+});
+
+describe("COMPILABLE_KINDS", () => {
+  it("is exactly the four kinds codegen supports", () => {
+    expect(COMPILABLE_KINDS).toEqual(["input", "agent", "output", "loop"]);
+  });
+});
+
+describe("applyAddNode", () => {
+  it("appends a node with default ports and saves its position", () => {
+    const next = applyAddNode(DOC, "agent", "New agent", 100, 200);
+    const added = next.nodes[next.nodes.length - 1];
+    expect(added.kind).toBe("agent");
+    expect(added.label).toBe("New agent");
+    expect(added.inputs).toHaveLength(1);
+    expect(added.outputs).toHaveLength(1);
+    expect(next.editor!.nodePositions).toContainEqual(
+      expect.objectContaining({ nodeId: added.id, x: 100, y: 200 }),
+    );
+    expect(DOC.nodes).toHaveLength(2); // immutable
+  });
+  it("generates an id not already present", () => {
+    const a = applyAddNode(DOC, "agent", "A", 0, 0);
+    const b = applyAddNode(a, "agent", "B", 0, 0);
+    const ids = b.nodes.map((n) => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("applyDeleteNode", () => {
+  it("removes the node, its wires, and its saved position", () => {
+    const next = applyDeleteNode(DOC, "ag");
+    expect(next.nodes.some((n) => n.id === "ag")).toBe(false);
+    expect(next.wires.some((w) => w.from.nodeId === "ag" || w.to.nodeId === "ag")).toBe(false);
+    expect((next.editor?.nodePositions ?? []).some((p) => p.nodeId === "ag")).toBe(false);
+    expect(DOC.nodes.some((n) => n.id === "ag")).toBe(true); // immutable
+  });
+});
+
+describe("applyLabelEdit", () => {
+  it("sets a node's label immutably", () => {
+    const next = applyLabelEdit(DOC, "ag", "Renamed");
+    expect(next.nodes.find((n) => n.id === "ag")!.label).toBe("Renamed");
+    expect(DOC.nodes.find((n) => n.id === "ag")!.label).not.toBe("Renamed");
+  });
+});
+
+describe("orphanedWiresForKind", () => {
+  it("flags the incoming wire when the new kind drops inputs", () => {
+    // ag has incoming in.o->ag.i. Changing ag->input (no inputs) orphans it.
+    const orphans = orphanedWiresForKind(DOC, "ag", "input");
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0]).toMatchObject({ to: { nodeId: "ag", portId: "i" } });
+  });
+  it("flags wires whose port id is not in the new kind's default ports", () => {
+    // ag's wire targets port 'i', but default ports are 'in'/'out', so even
+    // ag->loop (which has an input) orphans the 'i'-targeted wire.
+    const orphans = orphanedWiresForKind(DOC, "ag", "loop");
+    expect(orphans).toHaveLength(1);
+  });
+  it("returns empty when no wire touches the changing node", () => {
+    expect(orphanedWiresForKind(DOC, "in", "output")).toHaveLength(1); // in has outgoing wire on port 'o'
+  });
+});
+
+describe("applyKindChange", () => {
+  it("changes kind, resets ports to defaults, and drops orphaned wires", () => {
+    const next = applyKindChange(DOC, "ag", "input");
+    const node = next.nodes.find((n) => n.id === "ag")!;
+    expect(node.kind).toBe("input");
+    expect(node.inputs).toEqual([]);
+    expect(next.wires.some((w) => w.to.nodeId === "ag")).toBe(false);
+  });
+});
+
+describe("applyWorkflowMeta", () => {
+  it("patches workflow name/description immutably", () => {
+    const next = applyWorkflowMeta(DOC, { description: "new desc" });
+    expect(next.workflow.description).toBe("new desc");
+    expect(next.workflow.name).toBe(DOC.workflow.name);
+    expect(DOC.workflow.description).not.toBe("new desc");
+  });
+});
+
+describe("applyArgDefault", () => {
+  it("sets a default on an args object property, creating args if absent", () => {
+    const next = applyArgDefault(DOC, "target_folder", "Meetings/Follow-ups");
+    const args = next.workflow.args as { type: "object"; properties: Record<string, unknown> };
+    expect(args.type).toBe("object");
+    expect(args.properties.target_folder).toMatchObject({ type: "string", default: "Meetings/Follow-ups" });
   });
 });

@@ -231,18 +231,32 @@
     height: 100%;
     overflow: hidden;
   }
-  /* The 6px divider doubles as the separator line between canvas and inspector
-     (so the inspector no longer needs its own border-left). */
+  /* The divider is a 6px-wide transparent grab zone (easy to hit) with the
+     visible line drawn as a centered 1px rule — matching Obsidian's own
+     sidebar split: a 1px line that thickens to 3px on hover/drag. The line is a
+     pseudo-element so the grab zone can stay wide without a wide visible line. */
   .pflow-editor__divider {
+    position: relative;
     width: 6px;
     height: 100%;
     cursor: col-resize;
-    background: var(--background-modifier-border);
+    background: transparent;
     flex: none;
-    transition: background 80ms ease-out;
   }
-  .pflow-editor__divider:hover,
-  .pflow-editor--dragging .pflow-editor__divider {
+  .pflow-editor__divider::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    background: var(--background-modifier-border);
+    transition: width 80ms ease-out, background 80ms ease-out;
+  }
+  .pflow-editor__divider:hover::before,
+  .pflow-editor--dragging .pflow-editor__divider::before {
+    width: 3px;
     background: var(--interactive-accent);
   }
   .pflow-editor__inspector {

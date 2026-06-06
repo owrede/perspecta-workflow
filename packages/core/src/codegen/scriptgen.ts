@@ -2,6 +2,14 @@ import type { PflowDocument, PflowNode } from "../pflow/schema.js";
 import { topoOrder, inWires, nodeById } from "../pflow/topo.js";
 import { validatePflow } from "../pflow/validate.js";
 import { lintEmittedScript } from "./emit-lint.js";
+import { analyzeRegions, type Region, type LoopRegion } from "../pflow/regions.js";
+import {
+  emitVerify,
+  emitSynthesize,
+  emitLoopRegion,
+  emitSplitJoinRegion,
+  emitBranchRegion,
+} from "./emit-kinds.js";
 
 /** JSON.stringify yields a spec-compliant double-quoted JS string literal with
  *  correct escaping of quotes, backslashes, and control chars. */
@@ -41,10 +49,36 @@ export function renderMeta(doc: PflowDocument): string {
 /** A safe, collision-proof JS identifier for a node's output variable. The
  *  node's INDEX in `doc.nodes` (unique by construction) guarantees distinct
  *  identifiers even when two nodes' labels/ids sanitize to the same text. */
-function varName(doc: PflowDocument, node: PflowNode): string {
+export function varName(doc: PflowDocument, node: PflowNode): string {
   const base = (node.label || node.id).replace(/[^A-Za-z0-9_]/g, "_").replace(/^([0-9])/, "_$1");
   const index = doc.nodes.indexOf(node);
   return `${base}_${index}`.replace(/[^A-Za-z0-9_]/g, "_");
+}
+
+/** Build the `await agent(...)` expression (no `const X =` prefix) for a node,
+ *  weaving each WIRED input as a labelled `<context name="…">` block in declared
+ *  port order. `extraInstruction`, when given, is appended to the prompt before
+ *  the context blocks — verify/branch use it to request a sentinel line. The
+ *  result is deterministic for a given document. */
+export function buildAgentCall(doc: PflowDocument, node: PflowNode, extraInstruction?: string): string {
+  const label = jsString(node.label);
+  const base = (node.prompt ?? node.label) + (extraInstruction ? `\n\n${extraInstruction}` : "");
+  const incoming = inWires(doc, node.id);
+  const blocks: string[] = [];
+  for (const port of node.inputs) {
+    const wire = incoming.find((w) => w.to.portId === port.id);
+    if (!wire) continue;
+    const src = nodeById(doc, wire.from.nodeId);
+    if (!src) continue;
+    const srcVar = src.kind === "input" ? "args" : varName(doc, src);
+    blocks.push(`\n\n<context name="${port.name}">\n\${${srcVar}}\n</context>`);
+  }
+  if (blocks.length === 0 && !extraInstruction) {
+    // No woven dataflow and no extra instruction — keep a plain string literal.
+    return `await agent(${jsString(base)}, { label: ${label} })`;
+  }
+  const tmpl = "`" + escapeTemplate(base) + blocks.join("") + "`";
+  return `await agent(${tmpl}, { label: ${label} })`;
 }
 
 /** The source variable feeding a node's single input (linear subset). */
@@ -61,44 +95,52 @@ function emitNode(doc: PflowDocument, node: PflowNode): string {
       return "";
     case "agent": {
       const v = varName(doc, node);
-      const label = jsString(node.label);
-      const base = node.prompt ?? node.label;
-      // Thread upstream dataflow into the prompt as labelled context blocks.
-      // Iterate `node.inputs` in DECLARED ORDER (not wire order) so the emitted
-      // text is deterministic. For each input port that has an incoming wire,
-      // interpolate the source variable (`args` for input-sourced ports).
-      const incoming = inWires(doc, node.id);
-      const blocks: string[] = [];
-      for (const port of node.inputs) {
-        const wire = incoming.find((w) => w.to.portId === port.id);
-        if (!wire) continue;
-        const src = nodeById(doc, wire.from.nodeId);
-        if (!src) continue;
-        const srcVar = src.kind === "input" ? "args" : varName(doc, src);
-        blocks.push(`\n\n<context name="${port.name}">\n\${${srcVar}}\n</context>`);
-      }
-      if (blocks.length === 0) {
-        // No woven dataflow — keep the static prompt a plain string literal.
-        return `  const ${v} = await agent(${jsString(base)}, { label: ${label} });`;
-      }
-      // Build a template literal: base prompt followed by context blocks.
-      const tmpl = "`" + escapeTemplate(base) + blocks.join("") + "`";
-      return `  const ${v} = await agent(${tmpl}, { label: ${label} });`;
+      return `  const ${v} = ${buildAgentCall(doc, node)};`;
     }
     case "output": {
       const v = inputVar(doc, node);
       return `  return ${v};`;
     }
+    case "verify":
+      return emitVerify(doc, node);
+    case "synthesize":
+      return emitSynthesize(doc, node);
     case "split":
     case "join":
     case "loop":
-    case "verify":
-    case "synthesize":
     case "branch":
-      throw new Error(`scriptgen M1: node kind "${node.kind}" (node ${node.id}) is not yet supported by the Claude Code emitter`);
+      // These are control-flow REGION entries/members: they are emitted by the
+      // region pass in generateClaudeCodeWorkflow, not node-by-node. If emitNode
+      // is reached for one of these directly (i.e. it was not recognized as a
+      // region), the graph is malformed for that kind — fail loudly.
+      throw new Error(`scriptgen: node kind "${node.kind}" (node ${node.id}) must be emitted as part of a control-flow region; none was detected (check wiring: split needs a matching join, loop needs a refine back-edge, branch needs labelled paths)`);
     case "script":
       return `  // script node ${node.id}\n${(node.config?.body as string) ?? ""}`;
   }
+}
+
+/** emitOne renders a SINGLE node (the non-region path). Used at top level and
+ *  passed into region emitters so they can render their member nodes without an
+ *  import cycle back into emit-kinds. */
+function emitOne(doc: PflowDocument, node: PflowNode): string {
+  return emitNode(doc, node);
+}
+
+function emitRegion(doc: PflowDocument, region: Region): string {
+  if (region.kind === "loop") return emitLoopRegion(doc, region, emitOne);
+  if (region.kind === "splitjoin") return emitSplitJoinRegion(doc, region, emitOne);
+  return emitBranchRegion(doc, region, emitOne);
+}
+
+/** Topo order with loop back-edges removed so the graph is acyclic. Regions
+ *  must be computed first to know which wires are back-edges. */
+function orderExcludingBackEdges(doc: PflowDocument, regions: Region[]): string[] {
+  const backEdges = new Set(
+    regions.filter((r): r is LoopRegion => r.kind === "loop").map((r) => r.backEdge),
+  );
+  if (backEdges.size === 0) return topoOrder(doc);
+  const filtered: PflowDocument = { ...doc, wires: doc.wires.filter((w) => !backEdges.has(w)) };
+  return topoOrder(filtered);
 }
 
 /** Compile a .pflow document to a native Claude Code dynamic-workflow script.
@@ -110,12 +152,27 @@ export function generateClaudeCodeWorkflow(doc: PflowDocument): string {
     const msg = validation.errors.map((e) => `  - [${e.rule}] ${e.message}`).join("\n");
     throw new Error(`pflow validation failed:\n${msg}`);
   }
-  const order = topoOrder(doc);
+  const { regions, absorbed } = analyzeRegions(doc);
+  const order = orderExcludingBackEdges(doc, regions);
+  const regionByEntry = new Map(regions.map((r) => [r.entryId, r] as const));
+  const emittedRegions = new Set<string>();
   const header = `// Generated by Perspecta Workflow from ${doc.workflow.name}.pflow — do not hand-edit.`;
-  const body = order
-    .map((id) => emitNode(doc, nodeById(doc, id)!))
-    .filter((line) => line.length > 0)
-    .join("\n");
+
+  const lines: string[] = [];
+  for (const id of order) {
+    const region = regionByEntry.get(id);
+    if (region) {
+      if (!emittedRegions.has(region.entryId)) {
+        lines.push(emitRegion(doc, region));
+        emittedRegions.add(region.entryId);
+      }
+      continue;
+    }
+    if (absorbed.has(id)) continue; // member of a region — already emitted
+    const piece = emitNode(doc, nodeById(doc, id)!);
+    if (piece.length > 0) lines.push(piece);
+  }
+  const body = lines.join("\n");
   const code = [header, "", renderMeta(doc), "", body, ""].join("\n");
 
   const lint = lintEmittedScript(code);

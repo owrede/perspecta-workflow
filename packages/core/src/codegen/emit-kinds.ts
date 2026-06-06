@@ -1,7 +1,7 @@
 import type { PflowDocument, PflowNode } from "../pflow/schema.js";
 import type { LoopRegion, SplitJoinRegion, BranchRegion } from "../pflow/regions.js";
 import { nodeById, inWires } from "../pflow/topo.js";
-import { varName, buildAgentCall, jsString, escapeTemplate, sourceExpr } from "./scriptgen.js";
+import { varName, buildAgentCall, jsString, escapeTemplate, sourceExpr, branchResultVar } from "./scriptgen.js";
 
 /** Emit a single node's code. Injected into the region emitters so they can
  *  render their member nodes without importing scriptgen's emitNode (which
@@ -97,21 +97,38 @@ export function emitSplitJoinRegion(doc: PflowDocument, region: SplitJoinRegion,
 }
 
 /** branch: the branch node is an agent emitting `BRANCH: <label>`; dispatch
- *  with an if / else-if chain over the labelled paths. */
+ *  with an if / else-if chain over the labelled paths. When arms reconverge
+ *  (a downstream node consumes an arm's output), a single result variable is
+ *  hoisted before the branch and assigned at the end of each arm; the
+ *  reconvergent consumer reads that variable (wired up by the main emit loop
+ *  via buildAgentCall portOverrides). */
 export function emitBranchRegion(doc: PflowDocument, region: BranchRegion, emitOne: EmitOne): string {
   const branch = nodeById(doc, region.entryId)!;
   const choiceVar = varName(doc, branch);
   const labels = region.paths.map((p) => p.label).join("|");
   const call = buildAgentCall(doc, branch, `Choose exactly ONE path and emit a line: BRANCH: <one of ${labels}>`);
+
+  const reconverges = region.reconverges.length > 0;
+  const resultVar = branchResultVar(doc, branch);
+  // When an arm is empty, its "result" is the value that flowed INTO the branch
+  // (the branch's single input source) — the unchanged pass-through.
+  const branchInWire = inWires(doc, branch.id)[0];
+  const passthrough = branchInWire ? sourceExpr(doc, branchInWire) : '""';
+
   const arms = region.paths.map((p, i) => {
     const cond = `/BRANCH:\\s*${p.label}/i.test(String(${choiceVar}))`;
-    const body = p.memberIds
+    const pieces = p.memberIds
       .map((id) => emitOne(doc, nodeById(doc, id)!))
       .filter((s) => s.length > 0)
-      .map((s) => indent(s))
-      .join("\n");
+      .map((s) => indent(s));
+    if (reconverges) {
+      const armResult = p.resultNodeId ? varName(doc, nodeById(doc, p.resultNodeId)!) : passthrough;
+      pieces.push(indent(`  ${resultVar} = ${armResult};`));
+    }
     const head = i === 0 ? `  if (${cond}) {` : `  } else if (${cond}) {`;
-    return `${head}\n${body}`;
+    return `${head}\n${pieces.join("\n")}`;
   });
-  return [`  const ${choiceVar} = ${call};`, ...arms, `  }`].join("\n");
+
+  const decl = reconverges ? [`  let ${resultVar};`] : [];
+  return [...decl, `  const ${choiceVar} = ${call};`, ...arms, `  }`].join("\n");
 }

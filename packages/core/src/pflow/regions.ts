@@ -20,11 +20,27 @@ export interface SplitJoinRegion {
   memberIds: string[];
 }
 
-/** A conditional: a branch node with one labelled path per outgoing port. */
+/** A conditional: a branch node with one labelled path per outgoing port.
+ *  When arms reconverge (a node downstream of the whole branch consumes a value
+ *  produced inside an arm), the consumer cannot reference an arm-local variable
+ *  — it doesn't exist in the other arm. So the branch carries a single result
+ *  variable: each arm assigns it (the last node's output in that arm, or the
+ *  branch's own pass-through output when the arm is empty), and any wire from a
+ *  branch port or an arm node to a node OUTSIDE the branch is rewired to read
+ *  the result variable. `reconverges` lists those exit wires (consumer side). */
 export interface BranchRegion {
   kind: "branch";
   entryId: string;
-  paths: { label: string; memberIds: string[] }[];
+  paths: {
+    label: string;
+    memberIds: string[];
+    /** Node id whose output is this arm's result, or null when the arm is empty
+     *  (the result is then the branch's own output value, i.e. its input). */
+    resultNodeId: string | null;
+  }[];
+  /** Consumer-side endpoints (outside the branch) fed by an arm/branch output;
+   *  their incoming value is the branch result variable. */
+  reconverges: { nodeId: string; portId: string }[];
 }
 
 export type Region = LoopRegion | SplitJoinRegion | BranchRegion;
@@ -142,21 +158,61 @@ function pathNodesBetween(doc: PflowDocument, startId: string, endId: string): s
 function findBranchRegions(doc: PflowDocument): BranchRegion[] {
   const regions: BranchRegion[] = [];
   for (const branch of doc.nodes.filter((n) => n.kind === "branch")) {
-    const paths: { label: string; memberIds: string[] }[] = [];
+    // Raw forward-reachable set per labelled path.
+    const raw: { label: string; ids: Set<string> }[] = [];
     for (const port of branch.outputs) {
       const wire = outWires(doc, branch.id).find((w) => w.from.portId === port.id);
       if (!wire) continue;
-      const members = reachableFrom(doc, wire.to.nodeId, branch.id);
-      paths.push({ label: port.name, memberIds: members });
+      raw.push({ label: port.name, ids: reachableFrom(doc, wire.to.nodeId, branch.id) });
     }
-    if (paths.length > 0) regions.push({ kind: "branch", entryId: branch.id, paths });
+    if (raw.length === 0) continue;
+
+    // A node reached by MORE THAN ONE path is a reconvergence (join) point: it
+    // belongs AFTER the branch, not inside any arm. Emitting it inside each arm
+    // would (a) duplicate it and (b) reference per-arm-only variables that don't
+    // exist in the other arm (a runtime ReferenceError). So each arm keeps only
+    // the nodes reachable EXCLUSIVELY through it; shared nodes drop out of all
+    // arms and emit at top level after the branch (topo order places them
+    // there, since they are downstream of the branch).
+    const seenCount = new Map<string, number>();
+    for (const p of raw) for (const id of p.ids) seenCount.set(id, (seenCount.get(id) ?? 0) + 1);
+    const shared = new Set([...seenCount].filter(([, c]) => c > 1).map(([id]) => id));
+
+    const paths = raw.map((p) => {
+      const memberIds = doc.nodes.filter((n) => p.ids.has(n.id) && !shared.has(n.id)).map((n) => n.id);
+      // The arm's result is its LAST member that has an output port (declaration
+      // order is acyclic within an arm). Empty arm → null (result is the
+      // branch's own pass-through value for that label).
+      const withOutput = [...memberIds].reverse().find((id) => (nodeById(doc, id)?.outputs.length ?? 0) > 0);
+      return { label: p.label, memberIds, resultNodeId: withOutput ?? null };
+    });
+
+    // Reconvergence consumers: a wire from a branch output port OR from any arm
+    // member to a node OUTSIDE the branch+arms. Those consumer endpoints read
+    // the branch result variable instead of an arm-local var.
+    const armMembers = new Set(paths.flatMap((p) => p.memberIds));
+    const reconverges: { nodeId: string; portId: string }[] = [];
+    const seenConsumer = new Set<string>();
+    for (const w of doc.wires) {
+      const fromBranchPort = w.from.nodeId === branch.id;
+      const fromArm = armMembers.has(w.from.nodeId);
+      if (!fromBranchPort && !fromArm) continue;
+      const toOutside = w.to.nodeId !== branch.id && !armMembers.has(w.to.nodeId);
+      if (!toOutside) continue;
+      const key = `${w.to.nodeId}:${w.to.portId}`;
+      if (seenConsumer.has(key)) continue;
+      seenConsumer.add(key);
+      reconverges.push({ nodeId: w.to.nodeId, portId: w.to.portId });
+    }
+
+    regions.push({ kind: "branch", entryId: branch.id, paths, reconverges });
   }
   return regions;
 }
 
-/** Nodes reachable forward from startId, declaration-ordered, never re-entering
- *  the branch node. Single-level: paths are assumed disjoint until graph end. */
-function reachableFrom(doc: PflowDocument, startId: string, stopId: string): string[] {
+/** Nodes reachable forward from startId (never re-entering the branch). Returns
+ *  a Set; callers order against declaration order as needed. */
+function reachableFrom(doc: PflowDocument, startId: string, stopId: string): Set<string> {
   const seen = new Set<string>();
   const stack = [startId];
   while (stack.length) {
@@ -165,7 +221,7 @@ function reachableFrom(doc: PflowDocument, startId: string, stopId: string): str
     seen.add(id);
     for (const w of outWires(doc, id)) stack.push(w.to.nodeId);
   }
-  return doc.nodes.filter((n) => seen.has(n.id)).map((n) => n.id);
+  return seen;
 }
 
 // ---- entry point ---------------------------------------------------------

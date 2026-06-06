@@ -209,3 +209,50 @@ describe("loop body executes without a temporal-dead-zone error", () => {
     await expect(runEmitted(agent, log, args)).resolves.toBeDefined();
   });
 });
+
+// A branch whose arms RECONVERGE on a shared downstream consumer must not
+// reference an arm-local variable from the other arm. The unified result var is
+// assigned in each arm and read by the consumer. EXECUTE both paths to prove
+// neither throws a ReferenceError and each produces the right value.
+const RECONVERGE_DOC: PflowDocument = {
+  pflowFormatVersion: 1,
+  workflow: { name: "rc", description: "d", args: { type: "object", properties: { person: { type: "string" } }, required: ["person"] } },
+  nodes: [
+    { id: "in", kind: "input", label: "Person", inputs: [], outputs: [{ id: "person", name: "person", schema: { type: "string" } }] },
+    { id: "draft", kind: "agent", label: "Draft", prompt: "draft", inputs: [{ id: "person", name: "person", schema: { type: "string" }, required: true }], outputs: [{ id: "draft", name: "draft", schema: { type: "string" } }] },
+    { id: "br", kind: "branch", label: "Length", prompt: "too long?", inputs: [{ id: "draft", name: "draft", schema: { type: "string" }, required: true }], outputs: [{ id: "long", name: "long", schema: { type: "string" } }, { id: "ok", name: "ok", schema: { type: "string" } }] },
+    { id: "cond", kind: "agent", label: "Condense", prompt: "condense", inputs: [{ id: "long", name: "long", schema: { type: "string" }, required: true }], outputs: [{ id: "draft", name: "draft", schema: { type: "string" } }] },
+    { id: "fmt", kind: "agent", label: "Format", prompt: "format", inputs: [{ id: "draft", name: "draft", schema: { type: "string" }, required: true }], outputs: [{ id: "formatted", name: "formatted", schema: { type: "string" } }] },
+    { id: "out", kind: "output", label: "End", inputs: [{ id: "formatted", name: "formatted", schema: { type: "string" }, required: true }], outputs: [] },
+  ],
+  wires: [
+    { from: { nodeId: "in", portId: "person" }, to: { nodeId: "draft", portId: "person" } },
+    { from: { nodeId: "draft", portId: "draft" }, to: { nodeId: "br", portId: "draft" } },
+    { from: { nodeId: "br", portId: "long" }, to: { nodeId: "cond", portId: "long" } },
+    { from: { nodeId: "cond", portId: "draft" }, to: { nodeId: "fmt", portId: "draft" } },
+    { from: { nodeId: "br", portId: "ok" }, to: { nodeId: "fmt", portId: "draft" } },
+    { from: { nodeId: "fmt", portId: "formatted" }, to: { nodeId: "out", portId: "formatted" } },
+  ],
+};
+
+describe("branch reconvergence", () => {
+  it("emits a unified result var assigned in each arm, read by the consumer", () => {
+    const code = generateClaudeCodeWorkflow(RECONVERGE_DOC);
+    expect(code).toMatch(/let Length_\d+_result;/);
+    expect(code).toMatch(/Length_\d+_result = Condense_\d+;/); // long arm
+    expect(code).toMatch(/Length_\d+_result = Draft_\d+;/); // ok arm (pass-through)
+    expect(code).toMatch(/\$\{Length_\d+_result\}/); // consumer reads it
+  });
+
+  it("executes BOTH paths without a ReferenceError", async () => {
+    const code = generateClaudeCodeWorkflow(RECONVERGE_DOC);
+    const body = code.slice(code.indexOf("  const Draft_"));
+    for (const verdict of ["BRANCH: long", "BRANCH: ok"]) {
+      const agent = async (p: string) =>
+        /choose|too long|BRANCH/i.test(p) ? verdict : p.startsWith("condense") ? "short" : "drafted";
+      const args = { person: "X" };
+      const runEmitted = new Function("agent", "args", `return (async () => { ${body} })();`);
+      await expect(runEmitted(agent, args)).resolves.toBeDefined();
+    }
+  });
+});

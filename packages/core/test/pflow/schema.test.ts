@@ -69,3 +69,19 @@ describe("parsePflow", () => {
     expect(() => parsePflow(JSON.stringify({ ...MINIMAL, workflow: { name: "a/b", description: "d" } }))).toThrow();
   });
 });
+
+describe("editor.inspectorWidth", () => {
+  it("parses a document that carries inspectorWidth", () => {
+    const doc = parsePflow(
+      JSON.stringify({
+        ...MINIMAL,
+        editor: { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [], inspectorWidth: 420 },
+      }),
+    );
+    expect(doc.editor!.inspectorWidth).toBe(420);
+  });
+  it("parses a document with editor but no inspectorWidth (backward compat)", () => {
+    const doc = parsePflow(JSON.stringify(MINIMAL));
+    expect(doc.editor!.inspectorWidth).toBeUndefined();
+  });
+});

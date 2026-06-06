@@ -76,6 +76,7 @@ export const PflowDocumentZ = z.object({
           height: z.number().optional(),
         }),
       ),
+      inspectorWidth: z.number().optional(),
     })
     .optional(),
 });

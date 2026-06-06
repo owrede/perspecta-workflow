@@ -1,5 +1,5 @@
 import { MarkerType } from "@xyflow/system";
-import { NODE_KINDS } from "@perspecta/core";
+import { NODE_KINDS, parsePromptTokens, STRUCTURAL_PORT_IDS } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 
 export interface FlowNodeData {
@@ -90,6 +90,82 @@ export function applyInspectorWidth(doc: PflowDocument, width: number): PflowDoc
   );
   const editor = doc.editor ?? { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] };
   return { ...doc, editor: { ...editor, inspectorWidth: clamped } };
+}
+
+/** Compute the ports a node's prompt implies. agent: tokens replace (no tokens
+ *  & no wires -> default in/out). structural kinds: tokens ADD; the kind's
+ *  structural ports (by id) are kept. Any current port that is wired but no
+ *  longer derived (and not structural) is KEPT as an orphan so its wire survives
+ *  as a dashed (inactive) edge. Pure over (node, wires). */
+export function derivePortsFromPrompt(
+  node: { id: string; kind: NodeKind; prompt?: string; inputs: Port[]; outputs: Port[] },
+  wires: Wire[],
+): { inputs: Port[]; outputs: Port[] } {
+  const { inputs: inNames, outputs: outNames } = parsePromptTokens(node.prompt ?? "");
+  const structural = STRUCTURAL_PORT_IDS[node.kind];
+  const tokenInput = (name: string): Port => ({ id: `in:${name}`, name, schema: { type: "any" }, required: false });
+  const tokenOutput = (name: string): Port => ({ id: `out:${name}`, name, schema: { type: "any" } });
+  const wiredInIds = new Set(wires.filter((w) => w.to.nodeId === node.id).map((w) => w.to.portId));
+  const wiredOutIds = new Set(wires.filter((w) => w.from.nodeId === node.id).map((w) => w.from.portId));
+
+  function build(
+    names: string[],
+    make: (n: string) => Port,
+    current: Port[],
+    structuralIds: string[],
+    wiredIds: Set<string>,
+  ): Port[] {
+    const out: Port[] = [];
+    const seen = new Set<string>();
+    // 1) structural ports (preserve the node's current port object by id)
+    for (const sid of structuralIds) {
+      const cur = current.find((p) => p.id === sid);
+      if (cur) {
+        out.push({ ...cur, orphan: false });
+        seen.add(cur.id);
+      }
+    }
+    // 2) token ports
+    for (const n of names) {
+      const p = make(n);
+      if (seen.has(p.id)) continue;
+      out.push(p);
+      seen.add(p.id);
+    }
+    // 3) orphans: a current port still referenced by a wire but not (re-)derived
+    for (const cur of current) {
+      if (seen.has(cur.id)) continue;
+      if (wiredIds.has(cur.id)) {
+        out.push({ ...cur, orphan: true });
+        seen.add(cur.id);
+      }
+    }
+    return out;
+  }
+
+  let inputs = build(inNames, tokenInput, node.inputs, structural.inputs, wiredInIds);
+  let outputs = build(outNames, tokenOutput, node.outputs, structural.outputs, wiredOutIds);
+
+  // agent fallback: nothing derived and nothing wired -> single default in/out
+  if (node.kind === "agent" && inputs.length === 0 && outputs.length === 0) {
+    const def = defaultPortsForKind("agent");
+    inputs = def.inputs;
+    outputs = def.outputs;
+  }
+  return { inputs, outputs };
+}
+
+/** Set a node's prompt AND re-derive its ports from the new prompt. Immutable. */
+export function applyPromptAndDerivePorts(doc: PflowDocument, nodeId: string, prompt: string): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+      const withPrompt = { ...n, prompt };
+      const { inputs, outputs } = derivePortsFromPrompt(withPrompt, doc.wires);
+      return { ...withPrompt, inputs, outputs };
+    }),
+  };
 }
 
 /** Return a new document with `nodeId`'s prompt set. Immutable. */

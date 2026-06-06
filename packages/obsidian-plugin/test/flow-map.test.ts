@@ -234,7 +234,58 @@ import {
   applyInspectorWidth,
   MIN_INSPECTOR_WIDTH,
   MAX_INSPECTOR_WIDTH,
+  derivePortsFromPrompt,
+  applyPromptAndDerivePorts,
 } from "../src/views/pflow-editor/flow-map.js";
+
+describe("derivePortsFromPrompt", () => {
+  it("agent: tokens replace ports", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:topic}} -> {{out:draft}}", inputs: [{ id: "in", name: "in", schema: { type: "any" as const }, required: true }], outputs: [{ id: "out", name: "out", schema: { type: "any" as const } }] };
+    const r = derivePortsFromPrompt(node, []);
+    expect(r.inputs.map((p) => p.id)).toEqual(["in:topic"]);
+    expect(r.outputs.map((p) => p.id)).toEqual(["out:draft"]);
+  });
+  it("agent: no tokens, no wires -> default in/out", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "plain", inputs: [], outputs: [] };
+    const r = derivePortsFromPrompt(node, []);
+    expect(r.inputs.map((p) => p.id)).toEqual(["in"]);
+    expect(r.outputs.map((p) => p.id)).toEqual(["out"]);
+  });
+  it("structural kind: tokens ADD, structural port preserved", () => {
+    const loop = { id: "lp", kind: "loop" as const, label: "L", prompt: "{{in:extra}}", inputs: [{ id: "in", name: "draft", schema: { type: "any" as const }, required: true }], outputs: [{ id: "out", name: "fix", schema: { type: "any" as const } }] };
+    const r = derivePortsFromPrompt(loop, []);
+    expect(r.inputs.map((p) => p.id).sort()).toEqual(["in", "in:extra"].sort());
+    expect(r.outputs.map((p) => p.id)).toContain("out");
+  });
+  it("a wired port dropped by an edited prompt becomes an orphan", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:topic}}", inputs: [{ id: "in:notes", name: "notes", schema: { type: "any" as const } }], outputs: [] };
+    const wires = [{ from: { nodeId: "up", portId: "o" }, to: { nodeId: "ag", portId: "in:notes" } }];
+    const r = derivePortsFromPrompt(node, wires);
+    expect(r.inputs.find((p) => p.id === "in:notes")?.orphan).toBe(true);
+    expect(r.inputs.some((p) => p.id === "in:topic")).toBe(true);
+  });
+});
+
+describe("applyPromptAndDerivePorts", () => {
+  it("commits prompt and re-derives ports immutably", () => {
+    const next = applyPromptAndDerivePorts(DOC, "ag", "{{in:topic}} {{out:r}}");
+    const ag = next.nodes.find((n) => n.id === "ag")!;
+    expect(ag.prompt).toBe("{{in:topic}} {{out:r}}");
+    // 'topic' is the new derived input; the fixture's existing input port 'i' is
+    // WIRED (in.o->ag.i), so it survives as an orphan rather than being dropped.
+    expect(ag.inputs.map((p) => p.id)).toEqual(["in:topic", "i"]);
+    expect(ag.inputs.find((p) => p.id === "i")?.orphan).toBe(true);
+    expect(ag.outputs.map((p) => p.id)).toEqual(["out:r"]);
+    expect(DOC.nodes.find((n) => n.id === "ag")!.prompt).toBe("p");
+  });
+  it("drops a non-wired port that the prompt no longer declares (no orphan)", () => {
+    // ag's output port 'r' is NOT wired in DOC, so a prompt declaring only
+    // {{out:done}} replaces it cleanly — no orphan.
+    const next = applyPromptAndDerivePorts(DOC, "ag", "{{in:topic}} {{out:done}}");
+    const ag = next.nodes.find((n) => n.id === "ag")!;
+    expect(ag.outputs.map((p) => p.id)).toEqual(["out:done"]);
+  });
+});
 
 describe("applyInspectorWidth", () => {
   it("upserts the width into a doc, creating editor if absent", () => {

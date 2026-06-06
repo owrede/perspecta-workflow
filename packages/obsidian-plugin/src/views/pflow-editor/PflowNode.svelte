@@ -10,12 +10,56 @@
   const ROW = 24;
   const inTop = (i: number) => HEADER + i * ROW + ROW / 2;
   const outTop = (i: number) => HEADER + (data.inputs.length + i) * ROW + ROW / 2;
+
+  // Per-kind icon (Lucide path data, viewBox 0 0 24 24). Rendered in place of
+  // the kind text in the header so node type reads at a glance. Falls back to a
+  // generic box for unknown kinds.
+  const KIND_ICONS: Record<string, string> = {
+    // log-in — data entering the workflow
+    input: "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4 M10 17l5-5-5-5 M15 12H3",
+    // log-out — data leaving the workflow
+    output: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
+    // bot — an LLM agent
+    agent: "M12 8V4H8 M2 14h2 M20 14h2 M15 13v2 M9 13v2 M4 8h16a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a1 1 0 0 1 1-1Z",
+    // split — fan-out
+    split: "M16 3h5v5 M8 3H3v5 M21 3l-7.5 7.5a2.83 2.83 0 0 0-.83 2v6.5 M3 3l7.5 7.5a2.83 2.83 0 0 1 .83 2V19",
+    // join — fan-in / merge
+    join: "M8 3H3v5 M16 21h5v-5 M3 3l7.5 7.5a2.83 2.83 0 0 1 .83 2V19 M21 16l-7.5-7.5a2.83 2.83 0 0 1-.83-2V3",
+    // refresh-cw — loop
+    loop: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16 M8 16H3v5",
+    // check-circle — verify
+    verify: "M21.801 10A10 10 0 1 1 17 3.335 M9 11l3 3L22 4",
+    // combine — synthesize
+    synthesize: "M10 18H5a3 3 0 0 1-3-3v-1 M14 2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z M20 2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2 M7 21l3-3-3-3",
+    // git-branch — branch
+    branch: "M6 3v12 M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M15 6a9 9 0 0 0-9 9",
+    // code — script escape-hatch
+    script: "M16 18l6-6-6-6 M8 6l-6 6 6 6",
+  };
+  // box (generic fallback)
+  const FALLBACK_ICON =
+    "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z";
+
+  let iconPath = $derived(KIND_ICONS[data.kind] ?? FALLBACK_ICON);
 </script>
 
-<div class="pflow-node pflow-node--{data.kind}">
+<div class="pflow-node pflow-node--{data.kind}" class:pflow-node--selected={data.selected}>
   <div class="pflow-node__header">
     <span class="pflow-node__title">{data.label}</span>
-    <span class="pflow-node__kind">{data.kind}</span>
+    <svg
+      class="pflow-node__icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-label={data.kind}
+      role="img"
+    >
+      <title>{data.kind}</title>
+      <path d={iconPath} />
+    </svg>
   </div>
 
   <div class="pflow-node__ports">
@@ -75,9 +119,16 @@
   .pflow-node--branch { --pflow-accent: var(--color-cyan, #2e9bd9); }
   .pflow-node--script { --pflow-accent: var(--text-faint, #888); }
 
+  /* Selected state: accent ring so the canvas selection is visible, not just
+     reflected in the inspector. */
+  .pflow-node--selected {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+  }
+
   .pflow-node__header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--size-4-2, 8px);
     height: 40px;
@@ -91,11 +142,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .pflow-node__kind {
+  /* The kind icon sits where the kind text used to. Coloured with the node's
+     accent so the icon reinforces the kind at a glance. */
+  .pflow-node__icon {
     flex: none;
-    font-size: var(--font-ui-smaller);
-    color: var(--text-muted);
-    text-transform: lowercase;
+    width: 16px;
+    height: 16px;
+    color: var(--pflow-accent, var(--text-muted));
   }
 
   .pflow-node__ports { padding: 4px 0; }

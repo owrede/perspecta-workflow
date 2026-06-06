@@ -33,6 +33,19 @@
 .pflow-editor-host .svelte-flow__edge:hover .svelte-flow__edge-path {
   stroke: var(--interactive-accent);
 }
+/* Arrowheads: the directional marker at each edge's target end. xyflow draws
+   it with its own hardcoded fill, so theme it here (it uses `fill`, not
+   `stroke`, so the edge-path rules above don't reach it). */
+.pflow-editor-host .svelte-flow__arrowhead path,
+.pflow-editor-host .svelte-flow__edge .svelte-flow__edge-path + marker path {
+  fill: var(--text-muted);
+  stroke: var(--text-muted);
+}
+.pflow-editor-host .svelte-flow__edge.selected .svelte-flow__arrowhead path,
+.pflow-editor-host .svelte-flow__edge:hover .svelte-flow__arrowhead path {
+  fill: var(--interactive-accent);
+  stroke: var(--interactive-accent);
+}
 /* Controls (zoom buttons, bottom-left) */
 .pflow-editor-host .svelte-flow__controls {
   box-shadow: var(--shadow-s, 0 1px 4px rgba(0, 0, 0, 0.2));

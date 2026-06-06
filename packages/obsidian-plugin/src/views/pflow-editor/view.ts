@@ -65,6 +65,7 @@ export class PflowEditorView extends TextFileView {
       target: host,
       props: {
         file: this.current,
+        app: this.app,
         onChange: (next: PflowDocument) => {
           this.current = next;
           this.requestSave();

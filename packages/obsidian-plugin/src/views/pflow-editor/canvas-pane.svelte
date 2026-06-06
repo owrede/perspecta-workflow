@@ -4,16 +4,25 @@
   Renders the workflow as a Svelte Flow canvas using the custom `pflow`
   node type (PflowNode.svelte). Owns no document state: it receives
   `flowNodes` / `flowEdges` (already mapped from the PflowDocument by
-  flow-map.ts) and emits two upward signals:
+  flow-map.ts) and emits upward signals:
 
     - onMove(nodeId, x, y)      — a node finished dragging to a new spot
     - onSelect(nodeId | null)   — a node was clicked, or the pane cleared
+    - onConnect(c)              — two handles were wired by a mouse drag
+    - onAddNode(kind, x, y)     — background right-click → add a node
+    - onDeleteRequest(nodeId)   — node right-click "Delete" or Delete/Backspace
 
   Event wiring (verified against @xyflow/svelte 1.6.0):
-    - onnodedragstop — payload { targetNode, nodes, event }; targetNode
-      may be null, so we guard before emitting onMove.
-    - onnodeclick    — payload { node, event }; node.id drives onSelect.
-    - onpaneclick    — payload { event } (no node); clears selection.
+    - onnodedragstop  — payload { targetNode, nodes, event }
+    - onnodeclick     — payload { node, event }
+    - onpaneclick     — payload { event }
+    - onnodecontextmenu — payload { node, event }
+    - onconnect       — payload { source, target, sourceHandle, targetHandle }
+
+  screenToFlowPosition (for placing a new node at the cursor) comes from
+  useSvelteFlow(), which MUST be called from a component rendered INSIDE
+  <SvelteFlow>. So the background contextmenu + Delete-key handling live in a
+  small inner component (FlowControls) mounted as a child of <SvelteFlow>.
 -->
 
 <script lang="ts">
@@ -26,53 +35,54 @@
     type NodeProps,
   } from "@xyflow/svelte";
   import type { Component } from "svelte";
+  import type { NodeKind } from "@perspecta/core";
   // NOTE: @xyflow/svelte's stylesheet is NOT imported here. esbuild would route
   // a .css side-effect import to a separate, never-loaded main.css. It is
   // concatenated into the plugin's styles.css by esbuild.config.mjs instead.
   import PflowNodeRaw from "./PflowNode.svelte";
+  import FlowControls from "./flow-controls.svelte";
   import type { FlowNode, FlowEdge } from "./flow-map.js";
 
   let {
     flowNodes,
     flowEdges,
+    selectedId,
     onMove,
     onSelect,
     onConnect,
+    onAddNode,
+    onDeleteRequest,
   }: {
     flowNodes: FlowNode[];
     flowEdges: FlowEdge[];
+    selectedId: string | null;
     onMove: (nodeId: string, x: number, y: number) => void;
     onSelect: (nodeId: string | null) => void;
     onConnect: (c: { source: string; sourceHandle: string; target: string; targetHandle: string }) => void;
+    onAddNode: (kind: NodeKind, x: number, y: number) => void;
+    onDeleteRequest: (nodeId: string) => void;
   } = $props();
 
   const PflowNode = PflowNodeRaw as unknown as Component<NodeProps>;
   const nodeTypes = { pflow: PflowNode };
 
-  // NOTE: we deliberately do NOT pass `colorMode`. Setting colorMode="dark"
-  // makes xyflow apply its OWN hardcoded palette (#141414 etc.) and ignore the
-  // theme. Instead we leave the flow root transparent and paint the themed
-  // surface via the wrapper's background + <Background bgColor=...> below, so
-  // the canvas follows Obsidian's dark/light mode for free. (vault-memory.)
-
-  // Initialize with the mapped data at construction time. SvelteFlow's store
-  // reads `nodes`/`edges` while it is being created, so they must already be
-  // populated arrays — seeding them later via $effect leaves the store reading
-  // uninitialized reactive state and throws ("exclude.includes is not a
-  // function") during construction.
   let nodes = $state<Node[]>(flowNodes as unknown as Node[]);
   let edges = $state<Edge[]>(flowEdges as unknown as Edge[]);
 
-  // onnodedragstop payload is { targetNode, nodes, event }; targetNode
-  // is the dragged node (or null if the gesture had no single target).
+  // Re-seed the local stores when the mapped data changes upstream (e.g. a node
+  // was added/deleted, or selection changed the `selected` flag). Without this
+  // the canvas would not reflect document edits made via the inspector/menu.
+  $effect(() => {
+    nodes = flowNodes as unknown as Node[];
+  });
+  $effect(() => {
+    edges = flowEdges as unknown as Edge[];
+  });
+
   function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
     if (targetNode) onMove(targetNode.id, targetNode.position.x, targetNode.position.y);
   }
 
-  // onconnect fires when the user drags between two handles. Forward the
-  // source/target node+port up to the editor, which adds a wire (with full
-  // validation) to the document. We do NOT mutate `edges` locally — the new
-  // wire flows back down as `flowEdges` once the document updates.
   function handleConnect(c: {
     source: string;
     target: string;
@@ -87,6 +97,15 @@
       targetHandle: c.targetHandle,
     });
   }
+
+  // Obsidian Menu import is dynamic in flow-controls; the node-context menu is
+  // built there too. Here we just forward the request via a callback prop so
+  // the menu code lives in one place.
+  let requestNodeMenu = $state<((node: Node, event: MouseEvent) => void) | null>(null);
+  function handleNodeContextMenu({ node, event }: { node: Node; event: MouseEvent }) {
+    event.preventDefault();
+    requestNodeMenu?.(node, event);
+  }
 </script>
 
 <div class="pflow-canvas-pane">
@@ -98,20 +117,22 @@
     onnodedragstop={handleNodeDragStop}
     onnodeclick={({ node }) => onSelect(node.id)}
     onpaneclick={() => onSelect(null)}
+    onnodecontextmenu={handleNodeContextMenu}
     onconnect={handleConnect}
     proOptions={{ hideAttribution: true }}
   >
     <Background bgColor="var(--background-primary)" patternColor="var(--background-modifier-border)" />
     <Controls />
+    <FlowControls
+      {selectedId}
+      {onAddNode}
+      {onDeleteRequest}
+      bind:requestNodeMenu
+    />
   </SvelteFlow>
 </div>
 
 <style>
-  /* The themed surface sits on THIS wrapper. xyflow's flow root is transparent
-     by default, so this Obsidian-coloured background shows through — that's
-     what makes the canvas follow dark/light mode. min-height is the safety
-     floor: without it, if the percentage-height chain momentarily resolves to
-     0 the flow collapses and you get white bands. (vault-memory pattern.) */
   .pflow-canvas-pane {
     position: relative;
     width: 100%;

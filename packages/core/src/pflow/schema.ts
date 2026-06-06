@@ -33,6 +33,10 @@ export const PortZ = z.object({
   name: z.string().min(1),
   schema: PortSchemaZ,
   required: z.boolean().optional(),
+  /** True when the port is no longer declared by its node's prompt tokens but is
+   *  still referenced by a wire — kept so the wire survives as a dashed
+   *  (inactive) edge until the user clears it. */
+  orphan: z.boolean().optional(),
 });
 export type Port = z.infer<typeof PortZ>;
 

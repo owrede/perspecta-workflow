@@ -70,6 +70,23 @@ describe("parsePflow", () => {
   });
 });
 
+describe("Port.orphan", () => {
+  it("parses a port carrying orphan:true", () => {
+    const doc = parsePflow(JSON.stringify({
+      ...MINIMAL,
+      nodes: [
+        { id: "in", kind: "input", label: "In", inputs: [], outputs: [{ id: "o", name: "args", schema: { type: "any" }, orphan: true }] },
+        ...MINIMAL.nodes.slice(1),
+      ],
+    }));
+    expect(doc.nodes[0].outputs[0].orphan).toBe(true);
+  });
+  it("parses a port with no orphan field (backward compat)", () => {
+    const doc = parsePflow(JSON.stringify(MINIMAL));
+    expect(doc.nodes[0].outputs[0].orphan).toBeUndefined();
+  });
+});
+
 describe("editor.inspectorWidth", () => {
   it("parses a document that carries inspectorWidth", () => {
     const doc = parsePflow(

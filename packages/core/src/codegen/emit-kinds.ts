@@ -1,7 +1,7 @@
 import type { PflowDocument, PflowNode } from "../pflow/schema.js";
 import type { LoopRegion, SplitJoinRegion, BranchRegion } from "../pflow/regions.js";
 import { nodeById, inWires } from "../pflow/topo.js";
-import { varName, buildAgentCall, jsString, escapeTemplate } from "./scriptgen.js";
+import { varName, buildAgentCall, jsString, escapeTemplate, sourceExpr } from "./scriptgen.js";
 
 /** Emit a single node's code. Injected into the region emitters so they can
  *  render their member nodes without importing scriptgen's emitNode (which
@@ -47,9 +47,12 @@ export function emitLoopRegion(doc: PflowDocument, region: LoopRegion, _emitOne:
   // the loop and ASSIGNED (not re-declared with `const`) inside it. Otherwise
   // the first reference hits a temporal-dead-zone ReferenceError. Every span
   // member's variable is loop-carried, so we hoist them all and assign inside.
+  // Initialize the hoisted loop-carried vars to "" (not bare `let`) so that on
+  // the FIRST pass, a back-edge context block interpolating a not-yet-produced
+  // value weaves an empty string rather than the literal "undefined".
   const memberNodes = region.memberIds.map((id) => nodeById(doc, id)!);
   const declarations = memberNodes
-    .map((n) => `  let ${varName(doc, n)};`)
+    .map((n) => `  let ${varName(doc, n)} = "";`)
     .join("\n");
 
   // Each member emits an ASSIGNMENT (var already declared above). The loop node
@@ -77,9 +80,11 @@ export function emitSplitJoinRegion(doc: PflowDocument, region: SplitJoinRegion,
   const split = nodeById(doc, region.entryId)!;
   const join = nodeById(doc, region.joinId)!;
   const joinVar = varName(doc, join);
+  // The array to fan out is whatever feeds the split's input port. Resolve via
+  // sourceExpr so an input-node source becomes `args.<argName>` (the array arg),
+  // not the whole `args` object.
   const inWire = inWires(doc, split.id)[0];
-  const src = inWire ? nodeById(doc, inWire.from.nodeId) : undefined;
-  const arrExpr = src && src.kind !== "input" ? varName(doc, src) : "args";
+  const arrExpr = inWire ? sourceExpr(doc, inWire) : "args";
   const stages = region.memberIds.map((id, idx) => {
     const n = nodeById(doc, id)!;
     const param = idx === 0 ? "item" : "prev";

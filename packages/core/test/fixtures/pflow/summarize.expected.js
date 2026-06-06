@@ -11,6 +11,6 @@ export const meta = {
   const Research_1 = await agent(`Research the topic thoroughly.
 
 <context name="topic">
-${args}
+${args.topic}
 </context>`, { label: "Research" });
   return Research_1;

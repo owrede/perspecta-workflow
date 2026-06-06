@@ -22,10 +22,11 @@ describe("generateClaudeCodeWorkflow", () => {
     expect(code).toContain("export const meta = {");
     expect(code).toContain("await agent(");
     // research's input is sourced from the input node, so its prompt is a
-    // template literal that weaves `${args}` in as labelled context (C1).
+    // template literal that weaves the SPECIFIC arg `${args.topic}` (not the
+    // whole `args` object) in as labelled context (C1).
     expect(code).toContain("Research the topic thoroughly.");
     expect(code).toContain('<context name="topic">');
-    expect(code).toContain("${args}");
+    expect(code).toContain("${args.topic}");
     expect(code).toContain("return");
   });
   it("is deterministic — identical output across two emissions", () => {
@@ -165,6 +166,13 @@ describe("split/join region", () => {
   it("emits a pipeline over the split array", () => {
     const code = generateClaudeCodeWorkflow(SPLITJOIN_DOC);
     expect(code).toContain("await pipeline(");
+  });
+  it("fans out over the SPECIFIC array arg, not the whole args object", () => {
+    // SPLITJOIN_DOC's split is fed by the input node's `list` output port, so
+    // the pipeline must iterate args.list — not bare args (the args object).
+    const code = generateClaudeCodeWorkflow(SPLITJOIN_DOC);
+    expect(code).toMatch(/pipeline\(\s*args\.list,/);
+    expect(code).not.toMatch(/pipeline\(\s*args,/);
   });
 });
 

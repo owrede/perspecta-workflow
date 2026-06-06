@@ -55,6 +55,22 @@ export function varName(doc: PflowDocument, node: PflowNode): string {
   return `${base}_${index}`.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
+/** The JS expression that holds the value flowing OUT of a wire's source port.
+ *  - input-node source → `args.<argName>` (the specific arg, NOT the whole
+ *    `args` object), where argName is the source output port's name. Bracket
+ *    notation is used when the name is not a plain JS identifier. The workflow's
+ *    args schema carries one property per input-node output port, so this is the
+ *    value the caller passed for that arg.
+ *  - any other source → that node's output variable. */
+export function sourceExpr(doc: PflowDocument, wire: { from: { nodeId: string; portId: string } }): string {
+  const src = nodeById(doc, wire.from.nodeId);
+  if (!src) return "args";
+  if (src.kind !== "input") return varName(doc, src);
+  const port = src.outputs.find((p) => p.id === wire.from.portId);
+  const argName = port?.name ?? wire.from.portId;
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(argName) ? `args.${argName}` : `args[${jsString(argName)}]`;
+}
+
 /** Build the `await agent(...)` expression (no `const X =` prefix) for a node,
  *  weaving each WIRED input as a labelled `<context name="…">` block in declared
  *  port order. `extraInstruction`, when given, is appended to the prompt before
@@ -70,7 +86,7 @@ export function buildAgentCall(doc: PflowDocument, node: PflowNode, extraInstruc
     if (!wire) continue;
     const src = nodeById(doc, wire.from.nodeId);
     if (!src) continue;
-    const srcVar = src.kind === "input" ? "args" : varName(doc, src);
+    const srcVar = sourceExpr(doc, wire);
     blocks.push(`\n\n<context name="${port.name}">\n\${${srcVar}}\n</context>`);
   }
   if (blocks.length === 0 && !extraInstruction) {

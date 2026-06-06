@@ -56,6 +56,24 @@ describe("toFlowEdges", () => {
   });
 });
 
+describe("toFlowEdges orphan/inactive flag", () => {
+  it("marks an edge inactive when its target port is an orphan", () => {
+    const doc: PflowDocument = {
+      ...DOC,
+      nodes: DOC.nodes.map((n) =>
+        n.id === "ag"
+          ? { ...n, inputs: [{ id: "i", name: "topic", schema: { type: "string" }, orphan: true }] }
+          : n,
+      ),
+    };
+    const edge = toFlowEdges(doc).find((e) => e.target === "ag")!;
+    expect(edge.data?.inactive).toBe(true);
+  });
+  it("leaves a normal edge active", () => {
+    expect(toFlowEdges(DOC)[0].data?.inactive).toBeFalsy();
+  });
+});
+
 describe("applyNodePosition", () => {
   it("upserts a node position in editor.nodePositions without mutating the input", () => {
     const next = applyNodePosition(DOC, "ag", 300, 90);

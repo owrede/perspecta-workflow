@@ -26,7 +26,13 @@
     sourcePosition,
     targetPosition,
     markerEnd,
+    data,
   }: EdgeProps = $props();
+
+  // An orphan-backed wire is "inactive": render it dashed and muted, and drop
+  // the arrowhead — it no longer carries live dataflow (the port it touches is
+  // an orphan left by an edited prompt).
+  let inactive = $derived(Boolean((data as { inactive?: boolean } | undefined)?.inactive));
 
   // Minimum horizontal lead-out/lead-in off each handle, in flow units.
   const STICK = 40;
@@ -51,4 +57,9 @@
   });
 </script>
 
-<BaseEdge {id} {path} {markerEnd} />
+<BaseEdge
+  {id}
+  {path}
+  markerEnd={inactive ? undefined : markerEnd}
+  style={inactive ? "stroke-dasharray: 6 4; stroke: var(--text-faint); opacity: 0.7;" : ""}
+/>

@@ -69,14 +69,37 @@
   let nodes = $state<Node[]>(flowNodes as unknown as Node[]);
   let edges = $state<Edge[]>(flowEdges as unknown as Edge[]);
 
-  // Re-seed the local stores when the mapped data changes upstream (e.g. a node
-  // was added/deleted, or selection changed the `selected` flag). Without this
-  // the canvas would not reflect document edits made via the inspector/menu.
+  // Keep the local xyflow stores in sync with the upstream derived data WITHOUT
+  // clobbering xyflow's own per-node state (measured size, drag position).
+  //
+  // - When the set of node ids changes (add/delete), replace the array — xyflow
+  //   must adopt the new node set.
+  // - Otherwise (a selection toggle, a label/prompt edit, a position commit),
+  //   patch each existing node's `data` and `position` IN PLACE so xyflow keeps
+  //   its internals and there's no re-layout flicker on every doc edit.
+  function idKey(list: { id: string }[]): string {
+    return list.map((n) => n.id).join(",");
+  }
   $effect(() => {
-    nodes = flowNodes as unknown as Node[];
+    const next = flowNodes as unknown as Node[];
+    if (idKey(next) !== idKey(nodes)) {
+      nodes = next;
+      return;
+    }
+    const byId = new Map(next.map((n) => [n.id, n] as const));
+    for (const n of nodes) {
+      const src = byId.get(n.id);
+      if (!src) continue;
+      n.data = src.data;
+      // Adopt committed positions (e.g. from an undo or programmatic move) but
+      // leave a node where xyflow has it during an in-progress drag: positions
+      // already agree at drag-stop, so this is a no-op in the common case.
+      n.position = src.position;
+    }
   });
   $effect(() => {
-    edges = flowEdges as unknown as Edge[];
+    const next = flowEdges as unknown as Edge[];
+    if (idKey(next) !== idKey(edges)) edges = next;
   });
 
   function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
@@ -98,10 +121,19 @@
     });
   }
 
-  // Obsidian Menu import is dynamic in flow-controls; the node-context menu is
-  // built there too. Here we just forward the request via a callback prop so
-  // the menu code lives in one place.
+  // The add-node menu (pane right-click) and node-delete menu (node right-click)
+  // are built in flow-controls, which lives inside <SvelteFlow> so it can use
+  // useSvelteFlow().screenToFlowPosition. We forward both xyflow context-menu
+  // events to it via bindable callbacks. Using xyflow's own onpanecontextmenu /
+  // onnodecontextmenu props (not a document query) keeps everything scoped to
+  // THIS flow instance — correct even with multiple editor panes open.
+  let requestPaneMenu = $state<((event: MouseEvent) => void) | null>(null);
   let requestNodeMenu = $state<((node: Node, event: MouseEvent) => void) | null>(null);
+
+  function handlePaneContextMenu(event: MouseEvent) {
+    event.preventDefault();
+    requestPaneMenu?.(event);
+  }
   function handleNodeContextMenu({ node, event }: { node: Node; event: MouseEvent }) {
     event.preventDefault();
     requestNodeMenu?.(node, event);
@@ -117,6 +149,7 @@
     onnodedragstop={handleNodeDragStop}
     onnodeclick={({ node }) => onSelect(node.id)}
     onpaneclick={() => onSelect(null)}
+    onpanecontextmenu={({ event }) => handlePaneContextMenu(event as MouseEvent)}
     onnodecontextmenu={handleNodeContextMenu}
     onconnect={handleConnect}
     proOptions={{ hideAttribution: true }}
@@ -127,6 +160,7 @@
       {selectedId}
       {onAddNode}
       {onDeleteRequest}
+      bind:requestPaneMenu
       bind:requestNodeMenu
     />
   </SvelteFlow>

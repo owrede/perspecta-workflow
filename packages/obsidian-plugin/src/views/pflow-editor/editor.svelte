@@ -102,7 +102,7 @@
     commit(applyLabelEdit(doc, nodeId, label));
   }
 
-  async function onKindChange(nodeId: string, kind: NodeKind) {
+  async function onKindChange(nodeId: string, kind: NodeKind): Promise<boolean> {
     const orphans = orphanedWiresForKind(doc, nodeId, kind);
     if (orphans.length > 0) {
       const lines = orphans
@@ -114,9 +114,10 @@
         `This removes ${orphans.length} wire(s):\n${lines}`,
         "Change",
       );
-      if (!ok) return;
+      if (!ok) return false;
     }
     commit(applyKindChange(doc, nodeId, kind));
+    return true;
   }
 
   function onWorkflowMeta(patch: { name?: string; description?: string }) {

@@ -18,7 +18,7 @@
     argDefaults: { target_folder: string; filename_template: string; on_exists: string };
     onPrompt: (nodeId: string, prompt: string) => void;
     onRename: (nodeId: string, label: string) => void;
-    onKindChange: (nodeId: string, kind: NodeKind) => void;
+    onKindChange: (nodeId: string, kind: NodeKind) => Promise<boolean> | boolean;
     onWorkflowMeta: (patch: { name?: string; description?: string }) => void;
     onArgDefault: (key: string, value: string) => void;
   } = $props();
@@ -81,7 +81,15 @@
       <select
         class="pflow-inspector__type"
         value={node.data.kind}
-        onchange={(e) => onKindChange(node!.id, (e.currentTarget as HTMLSelectElement).value as NodeKind)}
+        onchange={async (e) => {
+          const select = e.currentTarget as HTMLSelectElement;
+          const prev = node!.data.kind;
+          const applied = await onKindChange(node!.id, select.value as NodeKind);
+          // If the change was rejected (orphan confirm cancelled), the document
+          // didn't change — snap the dropdown back to the node's real kind so
+          // the visual state never leads the data.
+          if (!applied) select.value = prev;
+        }}
       >
         {#each NODE_KINDS as k (k)}
           <option value={k} disabled={!COMPILABLE_KINDS.includes(k)}>

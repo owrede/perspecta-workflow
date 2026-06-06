@@ -1,0 +1,113 @@
+{
+  "pflowFormatVersion": 1,
+  "workflow": {
+    "name": "meeting-followup",
+    "description": "Turn a meeting note into a follow-up summary with owned action items, then save it to Meetings/Follow-ups.",
+    "args": {
+      "type": "object",
+      "properties": {
+        "meeting": { "type": "string" },
+        "target_folder": { "type": "string", "default": "Meetings/Follow-ups" },
+        "filename_template": { "type": "string", "default": "{{meeting}} — Follow-up.md" },
+        "on_exists": { "type": "string", "default": "version" }
+      },
+      "required": ["meeting"]
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "kind": "input",
+      "label": "Meeting",
+      "inputs": [],
+      "outputs": [{ "id": "meeting", "name": "meeting", "schema": { "type": "string" } }],
+      "phase": "Input"
+    },
+    {
+      "id": "read",
+      "kind": "agent",
+      "label": "Read meeting note",
+      "prompt": "Read the meeting note named in the context (its `meeting` value), a note with `class: Meeting Notes`, from the vault. Load its participants, topics, decisions, and any open action items into a structured digest. Return that material as the meeting_note for the drafting step.",
+      "inputs": [{ "id": "meeting", "name": "meeting", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "meeting_note", "name": "meeting_note", "schema": { "type": "string" } }],
+      "phase": "Gather"
+    },
+    {
+      "id": "draft",
+      "kind": "agent",
+      "label": "Draft follow-up",
+      "prompt": "Draft a follow-up for the meeting, grounded ONLY in the provided meeting_note:\n- A 2–3 sentence summary of what was discussed and decided.\n- A bulleted list of concrete action items, each with an owner if one was named.\nIf a `fix` note is present in context (from a prior review pass), apply it: assign owners to any action items that lack one. Return the full follow-up: the summary followed by the action-item list.",
+      "inputs": [
+        { "id": "meeting_note", "name": "meeting_note", "schema": { "type": "string" }, "required": true },
+        { "id": "fix", "name": "fix", "schema": { "type": "string" } }
+      ],
+      "outputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" } }],
+      "phase": "Draft"
+    },
+    {
+      "id": "review",
+      "kind": "loop",
+      "label": "Review owners",
+      "prompt": "Review the action items in the drafted follow-up below. Every action item MUST name an owner. For any item without an owner, determine the most plausible owner from the meeting's participants; if truly unknown, mark the owner as `?`. On the FIRST line emit exactly `ALL_OWNED: yes` if every action item now has an owner (or `?`), otherwise emit `ALL_OWNED: no` followed by the specific fix instructions for the next drafting pass.",
+      "inputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "fix", "name": "fix", "schema": { "type": "string" } }],
+      "phase": "Review",
+      "config": { "maxPasses": 3, "sentinel": "ALL_OWNED:\\s*yes" }
+    },
+    {
+      "id": "format",
+      "kind": "agent",
+      "label": "Format note",
+      "prompt": "Render the final follow-up note by filling this exact template, substituting the values and leaving the surrounding Markdown exactly as written. Use the meeting name from context and the reviewed follow-up content (summary + owned action items) from context. Output ONLY the rendered note:\n\n# Follow-up — {{meeting}}\n\n{{reviewed}}",
+      "inputs": [
+        { "id": "meeting", "name": "meeting", "schema": { "type": "string" }, "required": true },
+        { "id": "reviewed", "name": "reviewed", "schema": { "type": "string" }, "required": true }
+      ],
+      "outputs": [{ "id": "formatted", "name": "formatted", "schema": { "type": "string" } }],
+      "phase": "Format"
+    },
+    {
+      "id": "save",
+      "kind": "agent",
+      "label": "Save follow-up",
+      "prompt": "Save the formatted meeting follow-up to disk via the write_note tool.\n- target_folder: Meetings/Follow-ups\n- filename: \"<meeting> — Follow-up.md\" (fill in the meeting name from context)\n- on_exists: version (write a numbered variant if it already exists)\nThe exact note body to write is the formatted text from context. Return the written path as saved_path.",
+      "inputs": [
+        { "id": "meeting", "name": "meeting", "schema": { "type": "string" }, "required": true },
+        { "id": "formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
+      ],
+      "outputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" } }],
+      "phase": "Save"
+    },
+    {
+      "id": "end",
+      "kind": "output",
+      "label": "Done",
+      "inputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" }, "required": true }],
+      "outputs": [],
+      "phase": "Done"
+    }
+  ],
+  "wires": [
+    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "read", "portId": "meeting" } },
+    { "from": { "nodeId": "read", "portId": "meeting_note" }, "to": { "nodeId": "draft", "portId": "meeting_note" } },
+    { "from": { "nodeId": "draft", "portId": "draft" }, "to": { "nodeId": "review", "portId": "draft" } },
+    { "from": { "nodeId": "review", "portId": "fix" }, "to": { "nodeId": "draft", "portId": "fix" } },
+    { "from": { "nodeId": "draft", "portId": "draft" }, "to": { "nodeId": "format", "portId": "reviewed" } },
+    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "format", "portId": "meeting" } },
+    { "from": { "nodeId": "format", "portId": "formatted" }, "to": { "nodeId": "save", "portId": "formatted" } },
+    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "save", "portId": "meeting" } },
+    { "from": { "nodeId": "save", "portId": "saved_path" }, "to": { "nodeId": "end", "portId": "saved_path" } }
+  ],
+  "editor": {
+    "viewport": { "x": 0, "y": 0, "zoom": 1 },
+    "nodePositions": [
+      { "nodeId": "in", "x": 0, "y": 200 },
+      { "nodeId": "read", "x": 280, "y": 200 },
+      { "nodeId": "draft", "x": 560, "y": 120 },
+      { "nodeId": "review", "x": 860, "y": 120 },
+      { "nodeId": "format", "x": 1160, "y": 200 },
+      { "nodeId": "save", "x": 1440, "y": 200 },
+      { "nodeId": "end", "x": 1720, "y": 200 }
+    ]
+  }
+}

@@ -8,7 +8,7 @@
     toFlowNodes,
     toFlowEdges,
     applyNodePosition,
-    applyPromptEdit,
+    applyPromptAndDerivePorts,
     applyAddWire,
     applyAddNode,
     applyDeleteNode,
@@ -104,7 +104,9 @@
     commit(applyNodePosition(doc, nodeId, x, y));
   }
   function onPrompt(nodeId: string, prompt: string) {
-    commit(applyPromptEdit(doc, nodeId, prompt));
+    // Re-derive ports from the prompt's {{in:}}/{{out:}} tokens on every edit.
+    // Dropped-but-wired ports survive as orphans (dashed wires).
+    commit(applyPromptAndDerivePorts(doc, nodeId, prompt));
   }
   function onConnect(c: { source: string; sourceHandle: string; target: string; targetHandle: string }) {
     commit(

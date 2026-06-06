@@ -16,6 +16,7 @@
   import type { FlowNodeData } from "./flow-map.js";
   import { COMPILABLE_KINDS } from "./flow-map.js";
   import { KIND_INFO, FALLBACK_ICON, PROMPT_KINDS } from "./kind-info.js";
+  import PromptField from "./prompt-field.svelte";
 
   let {
     node,
@@ -156,13 +157,11 @@
     {#if showPrompt}
       <section class="pflow-insp__section">
         <h3 class="pflow-insp__section-title">Prompt</h3>
-        <p class="pflow-insp__help">The instruction this step runs. Wired inputs are woven in automatically when the workflow is generated.</p>
-        <textarea
-          class="pflow-insp__input pflow-insp__textarea"
-          rows="6"
+        <p class="pflow-insp__help">The instruction this step runs. Write <code>{`{{in:name}}`}</code> or <code>{`{{out:name}}`}</code> to add input/output ports; they appear as knobs on the card and colour here.</p>
+        <PromptField
           value={node.data.prompt ?? ""}
-          oninput={(e) => onPrompt(node!.id, (e.currentTarget as HTMLTextAreaElement).value)}
-        ></textarea>
+          onInput={(next) => onPrompt(node!.id, next)}
+        />
       </section>
     {/if}
 

@@ -47,6 +47,21 @@
   const PflowNode = PflowNodeRaw as unknown as Component<NodeProps>;
   const nodeTypes = { pflow: PflowNode };
 
+  // Match Obsidian's theme so xyflow applies its own dark/light defaults
+  // (it ships a full dark palette gated behind colorMode="dark"). Obsidian
+  // toggles `body.theme-dark` / `body.theme-light`.
+  let colorMode = $state<"dark" | "light">(
+    document.body.classList.contains("theme-dark") ? "dark" : "light",
+  );
+  $effect(() => {
+    const update = () => {
+      colorMode = document.body.classList.contains("theme-dark") ? "dark" : "light";
+    };
+    const obs = new MutationObserver(update);
+    obs.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  });
+
   // Initialize with the mapped data at construction time. SvelteFlow's store
   // reads `nodes`/`edges` while it is being created, so they must already be
   // populated arrays — seeding them later via $effect leaves the store reading
@@ -86,6 +101,7 @@
     bind:nodes
     bind:edges
     {nodeTypes}
+    {colorMode}
     fitView
     onnodedragstop={handleNodeDragStop}
     onnodeclick={({ node }) => onSelect(node.id)}
@@ -93,7 +109,7 @@
     onconnect={handleConnect}
     proOptions={{ hideAttribution: true }}
   >
-    <Background />
+    <Background bgColor="var(--background-primary)" patternColor="var(--background-modifier-border)" />
     <Controls />
   </SvelteFlow>
 </div>

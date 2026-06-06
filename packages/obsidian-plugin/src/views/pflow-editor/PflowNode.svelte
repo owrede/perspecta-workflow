@@ -114,25 +114,34 @@
     text-overflow: ellipsis;
   }
 
-  /* The connection handles: real, visible dots sitting ON the card edges.
+  /* The connection handles: real, grabbable dots sitting ON the card edges.
      :global is required because xyflow renders the Handle outside this
-     component's scoped-style reach. */
-  :global(.pflow-handle) {
-    width: 11px;
-    height: 11px;
+     component's scoped-style reach. We keep xyflow's left/right edge transform
+     (it pins to the edge) and only override size, colour, and — critically —
+     pointer-events, so the dot can be dragged to create a wire. The inline
+     `top` style on each Handle places it at its port row. */
+  :global(.pflow-handle.svelte-flow__handle) {
+    width: 12px;
+    height: 12px;
+    min-width: 12px;
+    min-height: 12px;
     border-radius: 50%;
     background: var(--background-secondary);
     border: 2px solid var(--text-muted);
+    pointer-events: all;
+    cursor: crosshair;
     transition: border-color 80ms ease-out, background 80ms ease-out;
   }
-  :global(.pflow-handle--req) {
+  :global(.pflow-handle--req.svelte-flow__handle) {
     background: var(--text-muted);
   }
-  :global(.pflow-handle--out) {
-    border-color: var(--interactive-accent, var(--text-accent));
-  }
-  :global(.pflow-handle:hover) {
+  :global(.pflow-handle--out.svelte-flow__handle) {
     border-color: var(--interactive-accent, var(--text-accent));
     background: var(--interactive-accent, var(--text-accent));
+  }
+  :global(.pflow-handle.svelte-flow__handle:hover) {
+    border-color: var(--interactive-accent, var(--text-accent));
+    background: var(--interactive-accent, var(--text-accent));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 30%, transparent);
   }
 </style>

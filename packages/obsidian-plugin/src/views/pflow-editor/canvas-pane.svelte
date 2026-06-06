@@ -76,29 +76,35 @@
   // .selected` class. Here we only mirror xyflow's structure/content from the
   // upstream document, carrying each node's live `selected` flag forward.
   //
-  // Re-seed when the node id-set changes (add/delete) OR when content changed
-  // (label/prompt/position from an edit). We rebuild from `flowNodes` but copy
-  // xyflow's current `selected` (and measured size) onto the rebuilt nodes so a
-  // doc edit never clears the user's selection.
+  // Re-seed when the node id-set changes (add/delete) OR when node CONTENT
+  // changed (label / kind / prompt from an inspector edit). Position is
+  // deliberately NOT part of the trigger: xyflow owns the live position during
+  // a drag, and committed positions only re-enter via doc→flowNodes at
+  // drag-stop (where xyflow's position already equals the committed one). If we
+  // included position here, every live drag tick would re-seed `nodes` from the
+  // stale committed position and snap the dragged node back — i.e. no visible
+  // drag until release. So: trigger on content only, and when we DO re-seed,
+  // carry each node's live position/selected/measured forward so an unrelated
+  // edit never moves or deselects a node.
   function idKey(list: { id: string }[]): string {
     return list.map((n) => n.id).join(",");
   }
   function contentKey(list: Node[]): string {
-    return list
-      .map((n) => `${n.id}:${n.data.label}:${n.data.kind}:${n.data.prompt ?? ""}:${n.position.x},${n.position.y}`)
-      .join("|");
+    return list.map((n) => `${n.id}:${n.data.label}:${n.data.kind}:${n.data.prompt ?? ""}`).join("|");
   }
   $effect(() => {
     const next = flowNodes as unknown as Node[];
     const structureChanged = idKey(next) !== idKey(nodes);
     const contentChanged = contentKey(next) !== contentKey(nodes);
     if (!structureChanged && !contentChanged) return;
-    // Carry xyflow's live per-node flags (selected, measured) forward so a
-    // content edit doesn't drop selection or trigger a re-measure flash.
     const live = new Map(nodes.map((n) => [n.id, n] as const));
     nodes = next.map((n) => {
       const prev = live.get(n.id);
-      return prev ? { ...n, selected: prev.selected, measured: prev.measured } : n;
+      // Keep xyflow's live position (drag), selection, and measured size; only
+      // adopt the new content fields from `next`.
+      return prev
+        ? { ...n, position: prev.position, selected: prev.selected, measured: prev.measured }
+        : n;
     });
   });
   $effect(() => {

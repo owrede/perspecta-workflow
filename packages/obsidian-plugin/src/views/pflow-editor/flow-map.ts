@@ -21,6 +21,12 @@ export interface FlowNode {
 
 /** Fixed node width (px). The PflowNode component lays out to fill it. */
 export const NODE_WIDTH = 220;
+
+/** Inspector sidebar width bounds (px). DEFAULT is used when a document has no
+ *  saved width; MIN/MAX clamp both the live drag and the persisted value. */
+export const DEFAULT_INSPECTOR_WIDTH = 320;
+export const MIN_INSPECTOR_WIDTH = 240;
+export const MAX_INSPECTOR_WIDTH = 640;
 export interface FlowEdge {
   id: string;
   /** Custom edge renderer (PflowEdge): guarantees a horizontal stick off each
@@ -73,6 +79,17 @@ export function applyNodePosition(doc: PflowDocument, nodeId: string, x: number,
   const nodePositions = editor.nodePositions.filter((p) => p.nodeId !== nodeId);
   nodePositions.push({ nodeId, x, y });
   return { ...doc, editor: { ...editor, nodePositions } };
+}
+
+/** Return a new document with the inspector width set (clamped to the
+ *  MIN/MAX bounds and rounded). Creates the editor block if absent. Immutable. */
+export function applyInspectorWidth(doc: PflowDocument, width: number): PflowDocument {
+  const clamped = Math.max(
+    MIN_INSPECTOR_WIDTH,
+    Math.min(MAX_INSPECTOR_WIDTH, Math.round(width)),
+  );
+  const editor = doc.editor ?? { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] };
+  return { ...doc, editor: { ...editor, inspectorWidth: clamped } };
 }
 
 /** Return a new document with `nodeId`'s prompt set. Immutable. */

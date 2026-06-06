@@ -229,3 +229,31 @@ describe("applyArgDefault", () => {
     expect(args.properties.target_folder).toMatchObject({ type: "string", default: "Meetings/Follow-ups" });
   });
 });
+
+import {
+  applyInspectorWidth,
+  MIN_INSPECTOR_WIDTH,
+  MAX_INSPECTOR_WIDTH,
+} from "../src/views/pflow-editor/flow-map.js";
+
+describe("applyInspectorWidth", () => {
+  it("upserts the width into a doc, creating editor if absent", () => {
+    const noEditor: PflowDocument = { ...DOC, editor: undefined };
+    const next = applyInspectorWidth(noEditor, 400);
+    expect(next.editor!.inspectorWidth).toBe(400);
+    expect(next.editor!.nodePositions).toEqual([]);
+  });
+  it("clamps below the minimum", () => {
+    expect(applyInspectorWidth(DOC, 10).editor!.inspectorWidth).toBe(MIN_INSPECTOR_WIDTH);
+  });
+  it("clamps above the maximum", () => {
+    expect(applyInspectorWidth(DOC, 9999).editor!.inspectorWidth).toBe(MAX_INSPECTOR_WIDTH);
+  });
+  it("rounds to an integer", () => {
+    expect(applyInspectorWidth(DOC, 321.7).editor!.inspectorWidth).toBe(322);
+  });
+  it("does not mutate the input document", () => {
+    applyInspectorWidth(DOC, 400);
+    expect(DOC.editor!.inspectorWidth).toBeUndefined();
+  });
+});

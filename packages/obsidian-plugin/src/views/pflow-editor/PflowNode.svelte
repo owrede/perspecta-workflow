@@ -41,9 +41,16 @@
     "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z";
 
   let iconPath = $derived(KIND_ICONS[data.kind] ?? FALLBACK_ICON);
+
+  // A loop is a "backwards" movement (do this, then RETURN there), so we mirror
+  // the node: inputs on the RIGHT edge, outputs on the LEFT edge, accent border
+  // on the right. This stops the draft⇄review wires from criss-crossing.
+  let flipped = $derived(data.kind === "loop");
+  let inSide = $derived(flipped ? Position.Right : Position.Left);
+  let outSide = $derived(flipped ? Position.Left : Position.Right);
 </script>
 
-<div class="pflow-node pflow-node--{data.kind}">
+<div class="pflow-node pflow-node--{data.kind}" class:pflow-node--flipped={flipped}>
   <div class="pflow-node__header">
     <span class="pflow-node__title">{data.label}</span>
     <svg
@@ -67,10 +74,11 @@
       <div class="pflow-port pflow-port--in">
         <span class="pflow-port__name">{port.name}</span>
       </div>
-      <!-- The Handle IS the connection dot, pinned to the left edge at this row. -->
+      <!-- The Handle IS the connection dot, pinned to the node edge at this row.
+           For a flipped (loop) node, inputs sit on the RIGHT edge. -->
       <Handle
         type="target"
-        position={Position.Left}
+        position={inSide}
         id={port.id}
         class="pflow-handle pflow-handle--in {port.required === false ? '' : 'pflow-handle--req'}"
         style={`top:${inTop(i)}px`}
@@ -83,7 +91,7 @@
       </div>
       <Handle
         type="source"
-        position={Position.Right}
+        position={outSide}
         id={port.id}
         class="pflow-handle pflow-handle--out"
         style={`top:${outTop(i)}px`}
@@ -101,6 +109,13 @@
     border: 1px solid var(--background-modifier-border);
     border-left: 4px solid var(--pflow-accent, var(--text-muted));
     border-radius: var(--radius-m, 6px);
+    /* the 4px accent stripe is on the inflow side; flipped nodes move it right */
+  }
+  /* Flipped (loop) node: inflow is on the right, so move the accent stripe and
+     mirror the port-row text alignment to match the swapped handles. */
+  .pflow-node--flipped {
+    border-left: 1px solid var(--background-modifier-border);
+    border-right: 4px solid var(--pflow-accent, var(--text-muted));
     color: var(--text-normal);
     font-family: var(--font-interface);
     font-size: var(--font-ui-small);
@@ -163,6 +178,10 @@
     color: var(--text-muted);
   }
   .pflow-port--out { justify-content: flex-end; }
+  /* Flipped node mirrors the alignment: inputs (right edge) align right,
+     outputs (left edge) align left. */
+  .pflow-node--flipped .pflow-port--in { justify-content: flex-end; }
+  .pflow-node--flipped .pflow-port--out { justify-content: flex-start; }
   .pflow-port__name {
     white-space: nowrap;
     overflow: hidden;

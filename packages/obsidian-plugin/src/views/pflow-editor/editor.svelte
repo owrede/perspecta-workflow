@@ -32,9 +32,10 @@
     doc = file;
   });
 
-  // toFlowNodes takes selectedId so each node carries data.selected for the
-  // selected-state ring. Re-derives whenever doc or selectedId changes.
-  let flowNodes = $derived(toFlowNodes(doc, selectedId));
+  // Selection is owned by xyflow (it styles the ring from its own `.selected`
+  // class); `selectedId` here only mirrors xyflow's current selection to drive
+  // the inspector and the Delete key. So toFlowNodes does NOT take selectedId.
+  let flowNodes = $derived(toFlowNodes(doc));
   let flowEdges = $derived(toFlowEdges(doc));
   let selectedNode = $derived(
     selectedId === null ? null : (flowNodes.find((n) => n.id === selectedId) ?? null),

@@ -7,8 +7,6 @@ export interface FlowNodeData {
   prompt?: string;
   inputs: Port[];
   outputs: Port[];
-  /** True when this node is the editor's current selection (drives the ring). */
-  selected?: boolean;
 }
 export interface FlowNode {
   id: string;
@@ -39,7 +37,7 @@ function fallbackPosition(index: number): { x: number; y: number } {
   return { x: index * (NODE_WIDTH + 80), y: 60 + (index % 2) * 140 };
 }
 
-export function toFlowNodes(doc: PflowDocument, selectedId: string | null = null): FlowNode[] {
+export function toFlowNodes(doc: PflowDocument): FlowNode[] {
   const saved = new Map((doc.editor?.nodePositions ?? []).map((p) => [p.nodeId, p] as const));
   return doc.nodes.map((n: PflowNode, i: number) => {
     const pos = saved.get(n.id);
@@ -48,14 +46,7 @@ export function toFlowNodes(doc: PflowDocument, selectedId: string | null = null
       type: "pflow" as const,
       position: pos ? { x: pos.x, y: pos.y } : fallbackPosition(i),
       width: NODE_WIDTH,
-      data: {
-        kind: n.kind,
-        label: n.label,
-        prompt: n.prompt,
-        inputs: n.inputs,
-        outputs: n.outputs,
-        selected: n.id === selectedId,
-      },
+      data: { kind: n.kind, label: n.label, prompt: n.prompt, inputs: n.inputs, outputs: n.outputs },
     };
   });
 }

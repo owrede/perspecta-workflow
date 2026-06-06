@@ -69,33 +69,37 @@
   let nodes = $state<Node[]>(flowNodes as unknown as Node[]);
   let edges = $state<Edge[]>(flowEdges as unknown as Edge[]);
 
-  // Keep the local xyflow stores in sync with the upstream derived data WITHOUT
-  // clobbering xyflow's own per-node state (measured size, drag position).
+  // Selection is owned ENTIRELY by xyflow (its per-node `selected` flag, toggled
+  // on click / pane-click). We do NOT maintain a parallel selection in node
+  // `data` — doing so fought xyflow's own selection and corrupted node state
+  // ("all nodes selected"). The ring is styled from xyflow's `.svelte-flow__node
+  // .selected` class. Here we only mirror xyflow's structure/content from the
+  // upstream document, carrying each node's live `selected` flag forward.
   //
-  // - When the set of node ids changes (add/delete), replace the array — xyflow
-  //   must adopt the new node set.
-  // - Otherwise (a selection toggle, a label/prompt edit, a position commit),
-  //   patch each existing node's `data` and `position` IN PLACE so xyflow keeps
-  //   its internals and there's no re-layout flicker on every doc edit.
+  // Re-seed when the node id-set changes (add/delete) OR when content changed
+  // (label/prompt/position from an edit). We rebuild from `flowNodes` but copy
+  // xyflow's current `selected` (and measured size) onto the rebuilt nodes so a
+  // doc edit never clears the user's selection.
   function idKey(list: { id: string }[]): string {
     return list.map((n) => n.id).join(",");
   }
+  function contentKey(list: Node[]): string {
+    return list
+      .map((n) => `${n.id}:${n.data.label}:${n.data.kind}:${n.data.prompt ?? ""}:${n.position.x},${n.position.y}`)
+      .join("|");
+  }
   $effect(() => {
     const next = flowNodes as unknown as Node[];
-    if (idKey(next) !== idKey(nodes)) {
-      nodes = next;
-      return;
-    }
-    const byId = new Map(next.map((n) => [n.id, n] as const));
-    for (const n of nodes) {
-      const src = byId.get(n.id);
-      if (!src) continue;
-      n.data = src.data;
-      // Adopt committed positions (e.g. from an undo or programmatic move) but
-      // leave a node where xyflow has it during an in-progress drag: positions
-      // already agree at drag-stop, so this is a no-op in the common case.
-      n.position = src.position;
-    }
+    const structureChanged = idKey(next) !== idKey(nodes);
+    const contentChanged = contentKey(next) !== contentKey(nodes);
+    if (!structureChanged && !contentChanged) return;
+    // Carry xyflow's live per-node flags (selected, measured) forward so a
+    // content edit doesn't drop selection or trigger a re-measure flash.
+    const live = new Map(nodes.map((n) => [n.id, n] as const));
+    nodes = next.map((n) => {
+      const prev = live.get(n.id);
+      return prev ? { ...n, selected: prev.selected, measured: prev.measured } : n;
+    });
   });
   $effect(() => {
     const next = flowEdges as unknown as Edge[];
@@ -104,6 +108,13 @@
 
   function handleNodeDragStop({ targetNode }: { targetNode: Node | null }) {
     if (targetNode) onMove(targetNode.id, targetNode.position.x, targetNode.position.y);
+  }
+
+  // xyflow drives selection; we just mirror its current selection to the
+  // inspector. Single-select: report the one selected node, or null when the
+  // selection is empty (background click) or multi (inspector edits one node).
+  function handleSelectionChange({ nodes: selNodes }: { nodes: Node[]; edges: Edge[] }) {
+    onSelect(selNodes.length === 1 ? selNodes[0].id : null);
   }
 
   function handleConnect(c: {
@@ -147,8 +158,7 @@
     {nodeTypes}
     fitView
     onnodedragstop={handleNodeDragStop}
-    onnodeclick={({ node }) => onSelect(node.id)}
-    onpaneclick={() => onSelect(null)}
+    onselectionchange={handleSelectionChange}
     onpanecontextmenu={({ event }) => handlePaneContextMenu(event as MouseEvent)}
     onnodecontextmenu={handleNodeContextMenu}
     onconnect={handleConnect}

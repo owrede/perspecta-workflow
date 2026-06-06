@@ -43,7 +43,7 @@
   let iconPath = $derived(KIND_ICONS[data.kind] ?? FALLBACK_ICON);
 </script>
 
-<div class="pflow-node pflow-node--{data.kind}" class:pflow-node--selected={data.selected}>
+<div class="pflow-node pflow-node--{data.kind}">
   <div class="pflow-node__header">
     <span class="pflow-node__title">{data.label}</span>
     <svg
@@ -119,9 +119,11 @@
   .pflow-node--branch { --pflow-accent: var(--color-cyan, #2e9bd9); }
   .pflow-node--script { --pflow-accent: var(--text-faint, #888); }
 
-  /* Selected state: accent ring so the canvas selection is visible, not just
-     reflected in the inspector. */
-  .pflow-node--selected {
+  /* Selected state: xyflow adds `.selected` to the node wrapper it renders
+     around this component. Style the ring from that, so selection is owned by
+     xyflow alone (no parallel selection state to corrupt). :global because the
+     wrapper is outside this component's scoped-style reach. */
+  :global(.svelte-flow__node.selected) .pflow-node {
     border-color: var(--interactive-accent);
     box-shadow: 0 0 0 2px var(--interactive-accent);
   }

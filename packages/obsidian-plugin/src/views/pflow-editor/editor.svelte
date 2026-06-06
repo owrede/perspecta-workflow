@@ -17,6 +17,10 @@
     orphanedWiresForKind,
     applyWorkflowMeta,
     applyArgDefault,
+    applyInspectorWidth,
+    DEFAULT_INSPECTOR_WIDTH,
+    MIN_INSPECTOR_WIDTH,
+    MAX_INSPECTOR_WIDTH,
   } from "./flow-map.js";
 
   let {
@@ -31,6 +35,43 @@
   $effect(() => {
     doc = file;
   });
+
+  // Inspector width: local state during a drag (smooth, no per-pixel doc write),
+  // persisted once on release. Re-sync from the document when it changes
+  // (e.g. external reload), mirroring `doc = file`.
+  let inspectorWidth = $state<number>(file.editor?.inspectorWidth ?? DEFAULT_INSPECTOR_WIDTH);
+  $effect(() => {
+    inspectorWidth = doc.editor?.inspectorWidth ?? DEFAULT_INSPECTOR_WIDTH;
+  });
+
+  let draggingDivider = $state(false);
+  let dragStartX = 0;
+  let dragStartWidth = 0;
+
+  function onDividerPointerDown(e: PointerEvent) {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    draggingDivider = true;
+    dragStartX = e.clientX;
+    dragStartWidth = inspectorWidth;
+    e.preventDefault();
+  }
+  function onDividerPointerMove(e: PointerEvent) {
+    if (!draggingDivider) return;
+    // Inspector is on the RIGHT: dragging the divider left (clientX decreases)
+    // widens it, so subtract the delta. Clamp live to the same bounds the
+    // persisted helper uses.
+    const next = dragStartWidth - (e.clientX - dragStartX);
+    inspectorWidth = Math.max(MIN_INSPECTOR_WIDTH, Math.min(MAX_INSPECTOR_WIDTH, next));
+  }
+  function endDividerDrag() {
+    if (!draggingDivider) return;
+    draggingDivider = false;
+    commit(applyInspectorWidth(doc, inspectorWidth)); // single persisted write
+  }
+  function onDividerDblClick() {
+    inspectorWidth = DEFAULT_INSPECTOR_WIDTH;
+    commit(applyInspectorWidth(doc, DEFAULT_INSPECTOR_WIDTH));
+  }
 
   // Selection is owned by xyflow (it styles the ring from its own `.selected`
   // class); `selectedId` here only mirrors xyflow's current selection to drive
@@ -129,7 +170,7 @@
   }
 </script>
 
-<div class="pflow-editor">
+<div class="pflow-editor" class:pflow-editor--dragging={draggingDivider}>
   <div class="pflow-editor__canvas">
     <CanvasPane
       {flowNodes}
@@ -142,7 +183,18 @@
       onSelect={(id) => (selectedId = id)}
     />
   </div>
-  <div class="pflow-editor__inspector">
+  <div
+    class="pflow-editor__divider"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize inspector"
+    onpointerdown={onDividerPointerDown}
+    onpointermove={onDividerPointerMove}
+    onpointerup={endDividerDrag}
+    onlostpointercapture={endDividerDrag}
+    ondblclick={onDividerDblClick}
+  ></div>
+  <div class="pflow-editor__inspector" style:width={`${inspectorWidth}px`}>
     <InspectorPane
       node={selectedNode}
       {workflow}
@@ -159,11 +211,17 @@
 <style>
   .pflow-editor {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr auto auto;
     grid-template-rows: 100%;
     width: 100%;
     height: 100%;
     min-height: 0;
+  }
+  /* While dragging the divider, suppress text selection and keep the resize
+     cursor across the whole editor so the drag feels anchored. */
+  .pflow-editor--dragging {
+    user-select: none;
+    cursor: col-resize;
   }
   /* min-height:0 lets the grid cell shrink so its child can own the height;
      height:100% makes the canvas fill the row (SvelteFlow needs a sized box). */
@@ -173,10 +231,24 @@
     height: 100%;
     overflow: hidden;
   }
+  /* The 6px divider doubles as the separator line between canvas and inspector
+     (so the inspector no longer needs its own border-left). */
+  .pflow-editor__divider {
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    background: var(--background-modifier-border);
+    flex: none;
+    transition: background 80ms ease-out;
+  }
+  .pflow-editor__divider:hover,
+  .pflow-editor--dragging .pflow-editor__divider {
+    background: var(--interactive-accent);
+  }
   .pflow-editor__inspector {
     height: 100%;
     min-height: 0;
     overflow-y: auto;
-    border-left: 1px solid var(--background-modifier-border);
+    /* width comes from the inline style:width binding */
   }
 </style>

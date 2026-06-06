@@ -16,6 +16,7 @@ export function schemaCompatible(from: PortSchema, to: PortSchema): boolean {
 
 import type { PflowDocument, Port } from "./schema.js";
 import { nodeById, inWires, outWires } from "./topo.js";
+import { analyzeRegions, memberIdsOf } from "./regions.js";
 
 export interface PflowError { rule: string; message: string; nodeId?: string; }
 export interface PflowValidation { ok: boolean; errors: PflowError[]; }
@@ -78,6 +79,32 @@ export function validatePflow(doc: PflowDocument): PflowValidation {
     }
     if (joins.length > 0 && !reachesJoin(doc, sp.id)) {
       errors.push({ rule: "split-no-join", message: `Split node ${sp.id} does not reach a join node`, nodeId: sp.id });
+    }
+  }
+
+  // A branch must have at least one labelled outgoing path; with none, codegen
+  // would emit an `if`-chain with no arms.
+  for (const node of doc.nodes) {
+    if (node.kind === "branch" && outWires(doc, node.id).length === 0) {
+      errors.push({ rule: "branch-no-path", message: `Branch node ${node.id} has no outgoing path`, nodeId: node.id });
+    }
+  }
+
+  // Nested control-flow regions are not supported in this pass: a region's
+  // member set must not contain another region's entry node. Detect by
+  // analysing regions and checking for an entry inside another region's span.
+  // (The loop node IS its own entry-as-member, so we exclude r's own entry.)
+  const { regions } = analyzeRegions(doc);
+  const entryIds = new Set(regions.map((r) => r.entryId));
+  for (const r of regions) {
+    for (const id of memberIdsOf(r)) {
+      if (id !== r.entryId && entryIds.has(id)) {
+        errors.push({
+          rule: "nested-region-unsupported",
+          message: `Control-flow region ${r.entryId} contains another region entry ${id}; nested regions are not supported`,
+          nodeId: r.entryId,
+        });
+      }
     }
   }
 

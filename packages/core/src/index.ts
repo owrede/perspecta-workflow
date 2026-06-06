@@ -14,5 +14,6 @@ export * from "./skillgen.js";
 export * from "./pflow/schema.js";
 export * from "./pflow/validate.js";
 export * from "./pflow/topo.js";
+export * from "./pflow/tokens.js";
 export * from "./codegen/emit-lint.js";
 export * from "./codegen/scriptgen.js";

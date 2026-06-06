@@ -1,0 +1,127 @@
+{
+  "pflowFormatVersion": 1,
+  "workflow": {
+    "name": "person-brief",
+    "description": "Draft a short network brief about a person, condense it if too long, then save it to Netzwerk/Personen.",
+    "args": {
+      "type": "object",
+      "properties": {
+        "person": { "type": "string" },
+        "target_folder": { "type": "string", "default": "Netzwerk/Personen" },
+        "filename_template": { "type": "string", "default": "{{person}} — Brief.md" },
+        "on_exists": { "type": "string", "default": "version" }
+      },
+      "required": ["person"]
+    }
+  },
+  "nodes": [
+    {
+      "id": "in",
+      "kind": "input",
+      "label": "Person",
+      "inputs": [],
+      "outputs": [{ "id": "person", "name": "person", "schema": { "type": "string" } }],
+      "phase": "Input"
+    },
+    {
+      "id": "read",
+      "kind": "agent",
+      "label": "Read person note",
+      "prompt": "Read the note for the person named in context (its `person` value) from `Netzwerk/Personen/`. Load their role, organisation, career path, and cluster hints into a structured digest. Return that material as person_note for the drafting step.",
+      "inputs": [{ "id": "person", "name": "person", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "person_note", "name": "person_note", "schema": { "type": "string" } }],
+      "phase": "Gather"
+    },
+    {
+      "id": "draft",
+      "kind": "agent",
+      "label": "Draft brief",
+      "prompt": "Draft a 3–5 sentence network brief about the person, grounded ONLY in person_note:\n- Who they are (current role + organisation)\n- One or two career highlights\n- Why they matter for Intelligence Impact (cluster hints)\nReturn the brief text.",
+      "inputs": [
+        { "id": "person", "name": "person", "schema": { "type": "string" }, "required": true },
+        { "id": "person_note", "name": "person_note", "schema": { "type": "string" }, "required": true }
+      ],
+      "outputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" } }],
+      "phase": "Draft"
+    },
+    {
+      "id": "length",
+      "kind": "branch",
+      "label": "Length check",
+      "prompt": "Examine the drafted brief below. Decide whether it is too long: a brief should be at most 5 sentences. If it exceeds 5 sentences, choose the `long` path so it can be condensed. Otherwise choose the `ok` path to format it as-is.",
+      "inputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" }, "required": true }],
+      "outputs": [
+        { "id": "long", "name": "long", "schema": { "type": "string" } },
+        { "id": "ok", "name": "ok", "schema": { "type": "string" } }
+      ],
+      "phase": "Check"
+    },
+    {
+      "id": "condense",
+      "kind": "agent",
+      "label": "Condense",
+      "prompt": "The brief below is too long. Condense it to at most 5 sentences while keeping the role, one career highlight, and the Intelligence Impact relevance. Return the shortened brief.",
+      "inputs": [{ "id": "long", "name": "long", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" } }],
+      "phase": "Condense"
+    },
+    {
+      "id": "format",
+      "kind": "agent",
+      "label": "Format note",
+      "prompt": "Render the final brief note by filling this exact template, substituting the values and leaving the surrounding Markdown exactly as written. Use the person name from context and the brief content from context. Output ONLY the rendered note:\n\n# Brief — {{person}}\n\n{{draft}}",
+      "inputs": [
+        { "id": "person", "name": "person", "schema": { "type": "string" }, "required": true },
+        { "id": "draft", "name": "draft", "schema": { "type": "string" }, "required": true }
+      ],
+      "outputs": [{ "id": "formatted", "name": "formatted", "schema": { "type": "string" } }],
+      "phase": "Format"
+    },
+    {
+      "id": "save",
+      "kind": "agent",
+      "label": "Save brief",
+      "prompt": "Save the formatted person brief to disk via the write_note tool.\n- target_folder: Netzwerk/Personen\n- filename: \"<person> — Brief.md\" (fill in the person name from context)\n- on_exists: version (write a numbered variant if it already exists)\nThe exact note body to write is the formatted text from context. Return the written path as saved_path.",
+      "inputs": [
+        { "id": "person", "name": "person", "schema": { "type": "string" }, "required": true },
+        { "id": "formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
+      ],
+      "outputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" } }],
+      "phase": "Save"
+    },
+    {
+      "id": "end",
+      "kind": "output",
+      "label": "Done",
+      "inputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" }, "required": true }],
+      "outputs": [],
+      "phase": "Done"
+    }
+  ],
+  "wires": [
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "read", "portId": "person" } },
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "draft", "portId": "person" } },
+    { "from": { "nodeId": "read", "portId": "person_note" }, "to": { "nodeId": "draft", "portId": "person_note" } },
+    { "from": { "nodeId": "draft", "portId": "draft" }, "to": { "nodeId": "length", "portId": "draft" } },
+    { "from": { "nodeId": "length", "portId": "long" }, "to": { "nodeId": "condense", "portId": "long" } },
+    { "from": { "nodeId": "condense", "portId": "draft" }, "to": { "nodeId": "format", "portId": "draft" } },
+    { "from": { "nodeId": "length", "portId": "ok" }, "to": { "nodeId": "format", "portId": "draft" } },
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "format", "portId": "person" } },
+    { "from": { "nodeId": "format", "portId": "formatted" }, "to": { "nodeId": "save", "portId": "formatted" } },
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "save", "portId": "person" } },
+    { "from": { "nodeId": "save", "portId": "saved_path" }, "to": { "nodeId": "end", "portId": "saved_path" } }
+  ],
+  "editor": {
+    "viewport": { "x": 0, "y": 0, "zoom": 1 },
+    "nodePositions": [
+      { "nodeId": "in", "x": 0, "y": 240 },
+      { "nodeId": "read", "x": 280, "y": 240 },
+      { "nodeId": "draft", "x": 560, "y": 240 },
+      { "nodeId": "length", "x": 840, "y": 240 },
+      { "nodeId": "condense", "x": 1120, "y": 100 },
+      { "nodeId": "format", "x": 1400, "y": 240 },
+      { "nodeId": "save", "x": 1680, "y": 240 },
+      { "nodeId": "end", "x": 1960, "y": 240 }
+    ]
+  }
+}

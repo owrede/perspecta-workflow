@@ -17,6 +17,20 @@
   import { COMPILABLE_KINDS } from "./flow-map.js";
   import { KIND_INFO, FALLBACK_ICON, PROMPT_KINDS } from "./kind-info.js";
   import PromptField from "./prompt-field.svelte";
+  import { isPortTokenLocked } from "./flow-map.js";
+  import type { TokenType } from "@perspecta/core";
+
+  // Token type ↔ schema type mapping for the inspector's type picker.
+  const TYPE_OPTIONS: { value: TokenType; label: string }[] = [
+    { value: "string", label: "string" },
+    { value: "json", label: "json" },
+    { value: "table", label: "table" },
+  ];
+  function schemaToTokenType(t: string): TokenType {
+    if (t === "object") return "json";
+    if (t === "array") return "table";
+    return "string";
+  }
 
   let {
     node,
@@ -28,6 +42,10 @@
     onWorkflowMeta,
     onArgDefault,
     onDetectPorts,
+    onAddPort,
+    onRemovePort,
+    onPortType,
+    onPortRename,
   }: {
     node: { id: string; data: FlowNodeData } | null;
     workflow: { name: string; description: string };
@@ -38,7 +56,20 @@
     onWorkflowMeta: (patch: { name?: string; description?: string }) => void;
     onArgDefault: (key: string, value: string) => void;
     onDetectPorts: (nodeId: string) => void;
+    onAddPort: (nodeId: string, dir: "in" | "out", name: string, type: TokenType) => void;
+    onRemovePort: (nodeId: string, dir: "in" | "out", portId: string) => void;
+    onPortType: (nodeId: string, dir: "in" | "out", name: string, type: TokenType) => void;
+    onPortRename: (nodeId: string, dir: "in" | "out", oldName: string, newName: string) => void;
   } = $props();
+
+  // A unique default name for a newly added port (in1, in2, …).
+  function nextPortName(existing: { name: string }[], dir: "in" | "out"): string {
+    let i = existing.length + 1;
+    let name = `${dir}${i}`;
+    const taken = new Set(existing.map((p) => p.name));
+    while (taken.has(name)) name = `${dir}${++i}`;
+    return name;
+  }
 
   const info = $derived(node ? KIND_INFO[node.data.kind as NodeKind] : null);
   const iconPath = $derived(info?.icon ?? FALLBACK_ICON);
@@ -177,26 +208,64 @@
 
     <section class="pflow-insp__section">
       <h3 class="pflow-insp__section-title">Ports</h3>
-      {#if node.data.inputs.length === 0 && node.data.outputs.length === 0}
-        <p class="pflow-insp__empty">This node has no ports.</p>
-      {/if}
-      {#if node.data.inputs.length > 0}
+      <p class="pflow-insp__help">Define this node's connection points. A port declared by a prompt token shows a <span class="pflow-insp__lockbadge">from prompt</span> badge and is edited via the prompt; ports added here can be renamed, retyped, or removed.</p>
+
+      {#if node.data.kind !== "input"}
         <div class="pflow-insp__ports-h">Inputs</div>
         {#each node.data.inputs as p (p.id)}
-          <div class="pflow-insp__port">
-            <span class="pflow-insp__port-name">{p.name}{p.required === false ? "" : " *"}</span>
-            <span class="pflow-insp__port-type">{p.schema.type}</span>
+          {@const locked = isPortTokenLocked({ prompt: node.data.prompt }, p, "in")}
+          <div class="pflow-insp__portrow">
+            <input
+              class="pflow-insp__port-name-input"
+              type="text"
+              value={p.name}
+              disabled={locked}
+              onchange={(e) => { const v = (e.currentTarget as HTMLInputElement).value.trim(); if (v && v !== p.name) onPortRename(node!.id, "in", p.name, v); }}
+            />
+            <select
+              class="pflow-insp__port-type-select"
+              value={schemaToTokenType(p.schema.type)}
+              onchange={(e) => onPortType(node!.id, "in", p.name, (e.currentTarget as HTMLSelectElement).value as TokenType)}
+            >
+              {#each TYPE_OPTIONS as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            </select>
+            {#if locked}
+              <span class="pflow-insp__lockbadge" title="Declared by a prompt token; edit it in the prompt.">from prompt</span>
+            {:else}
+              <button class="pflow-insp__port-remove" type="button" title="Remove port" aria-label="Remove input port" onclick={() => onRemovePort(node!.id, "in", p.id)}>×</button>
+            {/if}
           </div>
         {/each}
+        <button class="pflow-insp__add-port" type="button" onclick={() => onAddPort(node!.id, "in", nextPortName(node!.data.inputs, "in"), "string")}>+ Add input</button>
       {/if}
-      {#if node.data.outputs.length > 0}
+
+      {#if node.data.kind !== "output"}
         <div class="pflow-insp__ports-h">Outputs</div>
         {#each node.data.outputs as p (p.id)}
-          <div class="pflow-insp__port">
-            <span class="pflow-insp__port-name">{p.name}</span>
-            <span class="pflow-insp__port-type">{p.schema.type}</span>
+          {@const locked = isPortTokenLocked({ prompt: node.data.prompt }, p, "out")}
+          <div class="pflow-insp__portrow">
+            <input
+              class="pflow-insp__port-name-input"
+              type="text"
+              value={p.name}
+              disabled={locked}
+              onchange={(e) => { const v = (e.currentTarget as HTMLInputElement).value.trim(); if (v && v !== p.name) onPortRename(node!.id, "out", p.name, v); }}
+            />
+            <select
+              class="pflow-insp__port-type-select"
+              value={schemaToTokenType(p.schema.type)}
+              onchange={(e) => onPortType(node!.id, "out", p.name, (e.currentTarget as HTMLSelectElement).value as TokenType)}
+            >
+              {#each TYPE_OPTIONS as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            </select>
+            {#if locked}
+              <span class="pflow-insp__lockbadge" title="Declared by a prompt token; edit it in the prompt.">from prompt</span>
+            {:else}
+              <button class="pflow-insp__port-remove" type="button" title="Remove port" aria-label="Remove output port" onclick={() => onRemovePort(node!.id, "out", p.id)}>×</button>
+            {/if}
           </div>
         {/each}
+        <button class="pflow-insp__add-port" type="button" onclick={() => onAddPort(node!.id, "out", nextPortName(node!.data.outputs, "out"), "string")}>+ Add output</button>
       {/if}
     </section>
   {/if}
@@ -369,23 +438,82 @@
   .pflow-insp__ports-h:first-child {
     margin-top: 0;
   }
-  .pflow-insp__port {
+  /* ── Editable port rows ── */
+  .pflow-insp__portrow {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--size-2-2);
-    padding: var(--size-2-1) var(--size-2-3);
-    background: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s);
+    align-items: center;
+    gap: var(--size-2-1);
     margin-bottom: var(--size-2-1);
   }
-  .pflow-insp__port-name {
+  .pflow-insp__port-name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: var(--size-2-1) var(--size-2-2);
+    background: var(--background-primary);
     color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    font-family: var(--font-interface);
+    font-size: var(--font-ui-smaller);
   }
-  .pflow-insp__port-type {
+  .pflow-insp__port-name-input:focus {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: -1px;
+  }
+  .pflow-insp__port-name-input:disabled {
+    color: var(--text-muted);
+    background: var(--background-secondary);
+  }
+  .pflow-insp__port-type-select {
+    flex: none;
+    appearance: auto;
+    padding: var(--size-2-1) var(--size-2-2);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
     font-family: var(--font-monospace);
     font-size: var(--font-smaller);
-    color: var(--text-faint);
+  }
+  .pflow-insp__lockbadge {
+    flex: none;
+    padding: 0 var(--size-2-1);
+    font-size: var(--font-smaller);
+    color: var(--text-accent);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    white-space: nowrap;
+  }
+  .pflow-insp__port-remove {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+  }
+  .pflow-insp__port-remove:hover {
+    color: var(--text-on-accent, #fff);
+    background: var(--color-red, #e05252);
+    border-color: var(--color-red, #e05252);
+  }
+  .pflow-insp__add-port {
+    margin-top: var(--size-2-1);
+    padding: var(--size-2-1) var(--size-2-3);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    background: var(--background-primary);
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+  }
+  .pflow-insp__add-port:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
   }
 </style>

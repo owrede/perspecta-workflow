@@ -10,6 +10,10 @@
     applyNodePosition,
     applyPromptAndDerivePorts,
     applyDetectPorts,
+    applyAddPort,
+    applyRemovePort,
+    applyPortType,
+    applyPortRename,
     applyAddWire,
     applyAddNode,
     applyDeleteNode,
@@ -114,6 +118,18 @@
     // found in the prompt as {{in:}}/{{out:}} tokens.
     commit(applyDetectPorts(doc, nodeId));
   }
+  function onAddPort(nodeId: string, dir: "in" | "out", name: string, type: import("@perspecta/core").TokenType) {
+    commit(applyAddPort(doc, nodeId, dir, name, type));
+  }
+  function onRemovePort(nodeId: string, dir: "in" | "out", portId: string) {
+    commit(applyRemovePort(doc, nodeId, dir, portId));
+  }
+  function onPortType(nodeId: string, dir: "in" | "out", name: string, type: import("@perspecta/core").TokenType) {
+    commit(applyPortType(doc, nodeId, dir, name, type));
+  }
+  function onPortRename(nodeId: string, dir: "in" | "out", oldName: string, newName: string) {
+    commit(applyPortRename(doc, nodeId, dir, oldName, newName));
+  }
   function onConnect(c: { source: string; sourceHandle: string; target: string; targetHandle: string }) {
     commit(
       applyAddWire(
@@ -213,6 +229,10 @@
       {onWorkflowMeta}
       {onArgDefault}
       {onDetectPorts}
+      {onAddPort}
+      {onRemovePort}
+      {onPortType}
+      {onPortRename}
     />
   </div>
 </div>

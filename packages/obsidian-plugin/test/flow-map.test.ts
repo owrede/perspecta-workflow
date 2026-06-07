@@ -101,6 +101,21 @@ describe("toFlowEdges type-mismatch flag", () => {
   it("does not flag a matching-type edge", () => {
     expect(toFlowEdges(DOC)[0].data?.typeMismatch).toBeFalsy();
   });
+  it("treats an `any` endpoint as compatible (no mismatch)", () => {
+    // Source port typed `any` (e.g. a fresh input node's default out-port) wired
+    // into a concrete-typed input must NOT be flagged red.
+    const anySource: PflowDocument = {
+      ...DOC,
+      nodes: DOC.nodes.map((n) =>
+        n.id === "in"
+          ? { ...n, outputs: [{ id: "o", name: "topic", schema: { type: "any" as const } }] }
+          : n.id === "ag"
+            ? { ...n, inputs: [{ id: "i", name: "topic", schema: { type: "string" as const } }] }
+            : n,
+      ),
+    };
+    expect(toFlowEdges(anySource)[0].data?.typeMismatch).toBe(false);
+  });
 });
 
 describe("applyNodePosition", () => {

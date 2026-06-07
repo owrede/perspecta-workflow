@@ -97,8 +97,14 @@ export function toFlowEdges(doc: PflowDocument): FlowEdge[] {
     const toPort = portOf(w.to.nodeId, w.to.portId, "in");
     // Type mismatch: both ports resolve and their schema types differ. (A missing
     // port can't be a type clash — it's an orphan, handled by `inactive`.)
+    // `any` is a wildcard (e.g. a fresh input node's default out-port): it is
+    // compatible with every type, so an `any` endpoint is never a mismatch.
     const typeMismatch =
-      !!fromPort && !!toPort && fromPort.schema.type !== toPort.schema.type;
+      !!fromPort &&
+      !!toPort &&
+      fromPort.schema.type !== "any" &&
+      toPort.schema.type !== "any" &&
+      fromPort.schema.type !== toPort.schema.type;
     return {
       id: `${w.from.nodeId}:${w.from.portId}->${w.to.nodeId}:${w.to.portId}`,
       type: "pflow" as const,

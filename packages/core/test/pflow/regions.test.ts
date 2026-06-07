@@ -140,3 +140,57 @@ describe("analyzeRegions — branch", () => {
 
 export { LOOP_DOC, SPLITJOIN_DOC, BRANCH_DOC };
 
+
+describe("control-flow detection is port-name-agnostic", () => {
+  it("detects a loop back-edge regardless of port name", () => {
+    // a 2-node loop: body 'work' -> loop 'rev'; rev's output (named 'verdict',
+    // NOT 'fix') wires back to work. The cycle, not the name, marks the loop.
+    const doc: PflowDocument = {
+      pflowFormatVersion: 1,
+      workflow: { name: "t", description: "" },
+      nodes: [
+        { id: "in", kind: "input", label: "in", inputs: [], outputs: [{ id: "o", name: "seed", schema: { type: "string" } }] },
+        { id: "work", kind: "agent", label: "work", prompt: "p", inputs: [{ id: "in:seed", name: "seed", schema: { type: "string" } }, { id: "in:back", name: "back", schema: { type: "string" } }], outputs: [{ id: "out:draft", name: "draft", schema: { type: "string" } }] },
+        { id: "rev", kind: "loop", label: "rev", prompt: "Emit {{in:draft}} -> {{out:verdict}}", inputs: [{ id: "in:draft", name: "draft", schema: { type: "string" } }], outputs: [{ id: "out:verdict", name: "verdict", schema: { type: "string" } }] },
+        { id: "out", kind: "output", label: "out", inputs: [{ id: "i", name: "r", schema: { type: "string" } }], outputs: [] },
+      ],
+      wires: [
+        { from: { nodeId: "in", portId: "o" }, to: { nodeId: "work", portId: "in:seed" } },
+        { from: { nodeId: "work", portId: "out:draft" }, to: { nodeId: "rev", portId: "in:draft" } },
+        { from: { nodeId: "rev", portId: "out:verdict" }, to: { nodeId: "work", portId: "in:back" } },
+        { from: { nodeId: "rev", portId: "out:verdict" }, to: { nodeId: "out", portId: "i" } },
+      ],
+      editor: { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] },
+    };
+    const { regions } = analyzeRegions(doc);
+    expect(regions.filter((r) => r.kind === "loop")).toHaveLength(1);
+  });
+
+  it("detects a branch with arbitrary output (path) names", () => {
+    const doc: PflowDocument = {
+      pflowFormatVersion: 1,
+      workflow: { name: "t", description: "" },
+      nodes: [
+        { id: "in", kind: "input", label: "in", inputs: [], outputs: [{ id: "o", name: "x", schema: { type: "string" } }] },
+        { id: "br", kind: "branch", label: "br", prompt: "decide", inputs: [{ id: "in:x", name: "x", schema: { type: "string" } }], outputs: [{ id: "out:pathA", name: "pathA", schema: { type: "string" } }, { id: "out:pathB", name: "pathB", schema: { type: "string" } }] },
+        { id: "a", kind: "agent", label: "a", prompt: "A", inputs: [{ id: "in:x", name: "x", schema: { type: "string" } }], outputs: [{ id: "out:r", name: "r", schema: { type: "string" } }] },
+        { id: "b", kind: "agent", label: "b", prompt: "B", inputs: [{ id: "in:x", name: "x", schema: { type: "string" } }], outputs: [{ id: "out:r", name: "r", schema: { type: "string" } }] },
+        { id: "out", kind: "output", label: "out", inputs: [{ id: "i", name: "r", schema: { type: "string" } }], outputs: [] },
+      ],
+      wires: [
+        { from: { nodeId: "in", portId: "o" }, to: { nodeId: "br", portId: "in:x" } },
+        { from: { nodeId: "br", portId: "out:pathA" }, to: { nodeId: "a", portId: "in:x" } },
+        { from: { nodeId: "br", portId: "out:pathB" }, to: { nodeId: "b", portId: "in:x" } },
+        { from: { nodeId: "a", portId: "out:r" }, to: { nodeId: "out", portId: "i" } },
+        { from: { nodeId: "b", portId: "out:r" }, to: { nodeId: "out", portId: "i" } },
+      ],
+      editor: { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] },
+    };
+    const { regions } = analyzeRegions(doc);
+    const branch = regions.find((r) => r.kind === "branch");
+    expect(branch).toBeTruthy();
+    if (branch && branch.kind === "branch") {
+      expect(branch.paths.map((p) => p.label).sort()).toEqual(["pathA", "pathB"]);
+    }
+  });
+});

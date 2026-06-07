@@ -1,6 +1,7 @@
 import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { parsePflow, type PflowDocument } from "@perspecta/core";
+import { dedupeStructuralPorts } from "./flow-map.js";
 import Editor from "./editor.svelte";
 
 export const VIEW_TYPE_PFLOW = "perspecta-pflow-editor";
@@ -31,6 +32,11 @@ export class PflowEditorView extends TextFileView {
       this.renderError(`Invalid .pflow file: ${(err as Error).message}`);
       return;
     }
+    // Self-heal a legacy duplicate-port corruption (a non-structural port whose
+    // name collides with a structural one, e.g. a loop's `out:fix` beside its
+    // structural `fix`). Returns the same object when there's nothing to fix, so
+    // a clean file is untouched and won't be needlessly rewritten on autosave.
+    doc = dedupeStructuralPorts(doc);
     this.current = doc;
     this.renderEditor();
   }

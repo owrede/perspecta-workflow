@@ -328,6 +328,37 @@ describe("derivePortsFromPrompt", () => {
 
 import { applyDetectPorts } from "../src/views/pflow-editor/flow-map.js";
 
+import { dedupeStructuralPorts } from "../src/views/pflow-editor/flow-map.js";
+
+describe("dedupeStructuralPorts", () => {
+  it("removes a non-structural port duplicating a structural name + its wires", () => {
+    const doc: PflowDocument = {
+      ...DOC,
+      nodes: [
+        {
+          id: "lp", kind: "loop", label: "Review", prompt: "Emit {{out:fix}}.",
+          inputs: [{ id: "in", name: "draft", schema: { type: "string" } }],
+          outputs: [
+            { id: "out", name: "fix", schema: { type: "string" } },
+            { id: "out:fix", name: "fix", schema: { type: "string" } },
+          ],
+        },
+        { id: "d", kind: "agent", label: "D", prompt: "p", inputs: [{ id: "in:fix", name: "fix", schema: { type: "string" } }], outputs: [] },
+      ],
+      wires: [{ from: { nodeId: "lp", portId: "out:fix" }, to: { nodeId: "d", portId: "in:fix" } }],
+    };
+    const healed = dedupeStructuralPorts(doc);
+    const lp = healed.nodes.find((n) => n.id === "lp")!;
+    expect(lp.outputs.filter((p) => p.name === "fix")).toHaveLength(1);
+    expect(lp.outputs[0].id).toBe("out");
+    // the wire referencing the removed out:fix is pruned
+    expect(healed.wires).toHaveLength(0);
+  });
+  it("returns the same object when there is nothing to heal", () => {
+    expect(dedupeStructuralPorts(DOC)).toBe(DOC);
+  });
+});
+
 describe("applyDetectPorts", () => {
   const node = {
     id: "ag",

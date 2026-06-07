@@ -241,6 +241,45 @@ function escapeForRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Heal a document that carries DUPLICATE ports — a non-structural port whose
+ *  name collides with the kind's structural port (the corruption an older
+ *  Detect-ports build could persist, e.g. a loop with both `out`(fix) and
+ *  `out:fix`(fix)). Drops the redundant port and any wire referencing it. Only
+ *  removes provably-redundant duplicates; legitimate ports are untouched. Returns
+ *  the same object when nothing changes (so callers can skip a no-op write).
+ *  Immutable. */
+export function dedupeStructuralPorts(doc: PflowDocument): PflowDocument {
+  let changed = false;
+  const removed = new Set<string>(); // `${nodeId}|${portId}`
+  const nodes = doc.nodes.map((n) => {
+    const structural = STRUCTURAL_PORT_IDS[n.kind];
+    const heal = (ports: Port[], structuralIds: string[]): Port[] => {
+      const structuralNames = new Set(
+        ports.filter((p) => structuralIds.includes(p.id)).map((p) => p.name),
+      );
+      const kept = ports.filter((p) => {
+        if (structuralIds.includes(p.id)) return true;
+        if (structuralNames.has(p.name)) {
+          removed.add(`${n.id}|${p.id}`);
+          return false;
+        }
+        return true;
+      });
+      return kept.length === ports.length ? ports : kept; // same ref when unchanged
+    };
+    const inputs = heal(n.inputs, structural.inputs);
+    const outputs = heal(n.outputs, structural.outputs);
+    if (inputs === n.inputs && outputs === n.outputs) return n;
+    changed = true;
+    return { ...n, inputs, outputs };
+  });
+  if (!changed) return doc;
+  const wires = doc.wires.filter(
+    (w) => !removed.has(`${w.from.nodeId}|${w.from.portId}`) && !removed.has(`${w.to.nodeId}|${w.to.portId}`),
+  );
+  return { ...doc, nodes, wires };
+}
+
 /** Set a node's prompt AND re-derive its ports from the new prompt. Immutable. */
 export function applyPromptAndDerivePorts(doc: PflowDocument, nodeId: string, prompt: string): PflowDocument {
   return {

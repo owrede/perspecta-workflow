@@ -93,8 +93,19 @@
   function idKey(list: { id: string }[]): string {
     return list.map((n) => n.id).join(",");
   }
+  // A compact signature of a node's PORTS (id, name, type, orphan), so adding,
+  // removing, renaming, or retyping a port re-seeds the card. Without this, a
+  // port edit that does NOT change the prompt (e.g. adding/removing a token-less
+  // inspector port) would leave the canvas node stale.
+  function portsKey(data: { inputs: { id: string; name: string; schema: { type: string }; orphan?: boolean }[]; outputs: { id: string; name: string; schema: { type: string }; orphan?: boolean }[] }): string {
+    const sig = (p: { id: string; name: string; schema: { type: string }; orphan?: boolean }) =>
+      `${p.id}~${p.name}~${p.schema.type}~${p.orphan ? 1 : 0}`;
+    return `${data.inputs.map(sig).join(",")}/${data.outputs.map(sig).join(",")}`;
+  }
   function contentKey(list: Node[]): string {
-    return list.map((n) => `${n.id}:${n.data.label}:${n.data.kind}:${n.data.prompt ?? ""}`).join("|");
+    return list
+      .map((n) => `${n.id}:${n.data.label}:${n.data.kind}:${n.data.prompt ?? ""}:${portsKey(n.data as never)}`)
+      .join("|");
   }
   $effect(() => {
     const next = flowNodes as unknown as Node[];

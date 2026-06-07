@@ -49,6 +49,60 @@ describe("input token interpolation (json / table)", () => {
   });
 });
 
+/** input→agent(2 outputs)→two output nodes, each consuming one named output. */
+const MULTI: PflowDocument = {
+  pflowFormatVersion: 1,
+  workflow: { name: "multi", description: "d" },
+  nodes: [
+    { id: "in", kind: "input", label: "In", inputs: [], outputs: [{ id: "o", name: "topic", schema: { type: "string" } }] },
+    {
+      id: "ag",
+      kind: "agent",
+      label: "Make",
+      prompt: "From {{in:topic}} produce {{out:title}} and {{out:body}}.",
+      inputs: [{ id: "in:topic", name: "topic", schema: { type: "string" } }],
+      outputs: [
+        { id: "out:title", name: "title", schema: { type: "string" } },
+        { id: "out:body", name: "body", schema: { type: "string" } },
+      ],
+    },
+    { id: "t", kind: "output", label: "T", inputs: [{ id: "i", name: "r", schema: { type: "string" } }], outputs: [] },
+  ],
+  wires: [
+    { from: { nodeId: "in", portId: "o" }, to: { nodeId: "ag", portId: "in:topic" } },
+    { from: { nodeId: "ag", portId: "out:title" }, to: { nodeId: "t", portId: "i" } },
+  ],
+  editor: { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] },
+};
+
+describe("multi-output (2+ out tokens)", () => {
+  it("emits a delimiter instruction and per-output parse", () => {
+    const code = generateClaudeCodeWorkflow(MULTI);
+    expect(code).toContain("<<<out:title>>>");
+    expect(code).toContain("<<<out:body>>>");
+    expect(code).toMatch(/split\("<<<out:title>>>"\)/);
+  });
+  it("a downstream consumer reads the parsed output var, not the raw agent result", () => {
+    const code = generateClaudeCodeWorkflow(MULTI);
+    expect(code).toMatch(/return \w+__title;/);
+  });
+  it("runs: parses each section; a missing section yields empty string", async () => {
+    const code = generateClaudeCodeWorkflow(MULTI);
+    const body = code.replace(/export const meta[\s\S]*?\n}\n/, "");
+    // Stub agent returns only the title section (body section absent).
+    const agent = async () => "<<<out:title>>>\nHELLO\n<<<end>>>";
+    const runner = new Function(
+      "agent",
+      "args",
+      "log",
+      "pipeline",
+      `return (async () => {\n${body}\n})();`,
+    );
+    const result = await runner(agent, { topic: "x" }, () => {}, async () => []);
+    expect(String(result).trim()).toBe("HELLO");
+  });
+});
+
 describe("generated code runs (table / json serialization)", () => {
   // Run the generated body with a stub `agent` that echoes the prompt it
   // received, so we can assert how the typed value was serialised into the

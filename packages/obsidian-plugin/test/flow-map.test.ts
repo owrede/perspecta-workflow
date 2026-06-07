@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MarkerType } from "@xyflow/system";
-import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit } from "../src/views/pflow-editor/flow-map.js";
+import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit, applyDropConnect } from "../src/views/pflow-editor/flow-map.js";
 import type { PflowDocument } from "@perspecta/core";
 
 const DOC: PflowDocument = {
@@ -567,5 +567,74 @@ describe("applyInspectorWidth", () => {
   it("does not mutate the input document", () => {
     applyInspectorWidth(DOC, 400);
     expect(DOC.editor!.inspectorWidth).toBeUndefined();
+  });
+});
+
+describe("applyDropConnect (drag a connector onto a card)", () => {
+  // in(out:topic) --wired--> ag(in:topic); ag has out:notes (string).
+  // A second agent 'fmt' with a json output and no matching ports, for type/dir tests.
+  const D: PflowDocument = {
+    pflowFormatVersion: 1,
+    workflow: { name: "demo", description: "d" },
+    nodes: [
+      { id: "in", kind: "input", label: "In", inputs: [], outputs: [{ id: "out:topic", name: "topic", schema: { type: "string" } }] },
+      { id: "ag", kind: "agent", label: "A", prompt: "p", inputs: [{ id: "in:topic", name: "topic", schema: { type: "string" } }], outputs: [{ id: "out:notes", name: "notes", schema: { type: "string" } }] },
+      { id: "fmt", kind: "agent", label: "F", prompt: "p", inputs: [], outputs: [{ id: "out:data", name: "data", schema: { type: "object" } }] },
+      { id: "end", kind: "output", label: "Out", inputs: [{ id: "in", name: "result", schema: { type: "string" } }], outputs: [] },
+    ],
+    wires: [{ from: { nodeId: "in", portId: "out:topic" }, to: { nodeId: "ag", portId: "in:topic" } }],
+    editor: { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] },
+  };
+
+  it("output-drag onto a card creates a matching INPUT and wires it", () => {
+    // drag ag.out:notes onto 'end' card → end gets a new in:notes, wired.
+    const next = applyDropConnect(D, "ag", "out:notes", "source", "end");
+    const end = next.nodes.find((n) => n.id === "end")!;
+    const port = end.inputs.find((p) => p.name === "notes");
+    expect(port).toBeDefined();
+    expect(port!.id).toBe("in:notes");
+    expect(next.wires).toContainEqual({ from: { nodeId: "ag", portId: "out:notes" }, to: { nodeId: "end", portId: "in:notes" } });
+  });
+
+  it("carries the source port's TYPE onto the new port", () => {
+    // fmt.out:data is object(json) → dropping on 'end' makes end.in:data type object.
+    const next = applyDropConnect(D, "fmt", "out:data", "source", "end");
+    const port = next.nodes.find((n) => n.id === "end")!.inputs.find((p) => p.name === "data")!;
+    expect(port.schema.type).toBe("object");
+  });
+
+  it("reuses an existing same-name port instead of duplicating", () => {
+    // ag already has in:topic; dragging in.out:topic onto ag wires to it, no new port.
+    const next = applyDropConnect(D, "in", "out:topic", "source", "ag");
+    const ag = next.nodes.find((n) => n.id === "ag")!;
+    expect(ag.inputs.filter((p) => p.name === "topic")).toHaveLength(1);
+    expect(next.wires).toContainEqual({ from: { nodeId: "in", portId: "out:topic" }, to: { nodeId: "ag", portId: "in:topic" } });
+  });
+
+  it("input-drag onto a card creates a matching OUTPUT and wires output→input", () => {
+    // drag end.in (name 'result') onto ag → ag gets out:result, wired ag.out:result → end.in
+    const next = applyDropConnect(D, "end", "in", "target", "ag");
+    const ag = next.nodes.find((n) => n.id === "ag")!;
+    const port = ag.outputs.find((p) => p.name === "result");
+    expect(port).toBeDefined();
+    expect(port!.id).toBe("out:result");
+    expect(next.wires).toContainEqual({ from: { nodeId: "ag", portId: "out:result" }, to: { nodeId: "end", portId: "in" } });
+  });
+
+  it("no-ops on a self-drop", () => {
+    expect(applyDropConnect(D, "ag", "out:notes", "source", "ag")).toBe(D);
+  });
+
+  it("no-ops when the target kind forbids the needed direction", () => {
+    // output-drag needs a target INPUT, but 'in' is an input node (no inputs).
+    expect(applyDropConnect(D, "fmt", "out:data", "source", "in")).toBe(D);
+    // input-drag needs a target OUTPUT, but 'end' is an output node (no outputs).
+    expect(applyDropConnect(D, "ag", "in:topic", "target", "end")).toBe(D);
+  });
+
+  it("does not mutate the input document", () => {
+    const before = JSON.stringify(D);
+    applyDropConnect(D, "ag", "out:notes", "source", "end");
+    expect(JSON.stringify(D)).toBe(before);
   });
 });

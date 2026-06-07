@@ -52,6 +52,7 @@
     onMove,
     onSelect,
     onConnect,
+    onDropConnect,
     onAddNode,
     onDeleteRequest,
   }: {
@@ -61,6 +62,7 @@
     onMove: (nodeId: string, x: number, y: number) => void;
     onSelect: (nodeId: string | null) => void;
     onConnect: (c: { source: string; sourceHandle: string; target: string; targetHandle: string }) => void;
+    onDropConnect: (d: { fromNodeId: string; fromPortId: string; fromType: "source" | "target"; toNodeId: string }) => void;
     onAddNode: (kind: NodeKind, x: number, y: number) => void;
     onDeleteRequest: (nodeId: string) => void;
   } = $props();
@@ -153,6 +155,33 @@
     });
   }
 
+  // Drop-on-card: when a connection drag is RELEASED, xyflow fires onconnectend
+  // with the final state. If it landed on a handle, `toHandle` is set and
+  // `onconnect` already fired — we do nothing here. If it landed on a card body
+  // (no handle) but over a node, `toHandle` is null while `toNode` holds that
+  // node. In that case we ask upward to create a matching opposite-direction
+  // port on the target and wire it. `fromHandle` carries the drag origin's
+  // node, port id, and type ('source' = from an output, 'target' = from an input).
+  function handleConnectEnd(
+    _event: MouseEvent | TouchEvent,
+    state: {
+      fromHandle: { nodeId: string; id?: string | null; type: "source" | "target" } | null;
+      toHandle: { nodeId: string; id?: string | null } | null;
+      toNode: { id: string } | null;
+    },
+  ) {
+    if (state.toHandle) return; // landed on a real port — onconnect handled it
+    const from = state.fromHandle;
+    const target = state.toNode;
+    if (!from || !from.id || !target) return; // released on empty canvas
+    onDropConnect({
+      fromNodeId: from.nodeId,
+      fromPortId: from.id,
+      fromType: from.type,
+      toNodeId: target.id,
+    });
+  }
+
   // The add-node menu (pane right-click) and node-delete menu (node right-click)
   // are built in flow-controls, which lives inside <SvelteFlow> so it can use
   // useSvelteFlow().screenToFlowPosition. We forward both xyflow context-menu
@@ -184,6 +213,7 @@
     onpanecontextmenu={({ event }) => handlePaneContextMenu(event as MouseEvent)}
     onnodecontextmenu={handleNodeContextMenu}
     onconnect={handleConnect}
+    onconnectend={handleConnectEnd as never}
     proOptions={{ hideAttribution: true }}
   >
     <Background bgColor="var(--background-primary)" patternColor="var(--background-modifier-border)" />

@@ -15,6 +15,7 @@
     applyPortType,
     applyPortRename,
     applyAddWire,
+    applyDropConnect,
     applyAddNode,
     applyDeleteNode,
     applyLabelEdit,
@@ -139,6 +140,9 @@
       ),
     );
   }
+  function onDropConnect(d: { fromNodeId: string; fromPortId: string; fromType: "source" | "target"; toNodeId: string }) {
+    commit(applyDropConnect(doc, d.fromNodeId, d.fromPortId, d.fromType, d.toNodeId));
+  }
 
   function onAddNode(kind: NodeKind, x: number, y: number) {
     const next = applyAddNode(doc, kind, `New ${kind}`, x, y);
@@ -201,6 +205,7 @@
       {flowEdges}
       {onMove}
       {onConnect}
+      {onDropConnect}
       {onAddNode}
       {onDeleteRequest}
       selectedId={selectedId}

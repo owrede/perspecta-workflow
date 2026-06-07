@@ -205,6 +205,18 @@ export function buildAgentCall(
     for (const v of variants) rewritten = rewritten.split(v).join(sentinel);
     substitutions.push(expr);
   }
+  // Output tokens NAME a result in place: each {{out:NAME(:TYPE)?}} is replaced
+  // by the bare NAME wherever it appears, so the prose reads naturally ("...as
+  // draft...") and the output's name stays visible to the LLM. Multiple
+  // occurrences of the same out-token all render as the same NAME and map to the
+  // single out-port NAME (no port multiplication). The multi-output delimiter
+  // protocol (2+ distinct out-ports) is added separately as an instruction.
+  for (const tok of tokens.outputs) {
+    for (const v of [`{{out:${tok.name}}}`, `{{out:${tok.name}:${tok.type}}}`]) {
+      rewritten = rewritten.split(v).join(tok.name);
+    }
+  }
+
   const hasTokens = substitutions.length > 0;
 
   const incoming = inWires(doc, node.id);
@@ -225,8 +237,10 @@ export function buildAgentCall(
   }
 
   if (blocks.length === 0 && !extraInstruction && !hasTokens) {
-    // No woven dataflow, no extra instruction, no inline tokens — plain literal.
-    return `await agent(${jsString(base)}, { label: ${label} })`;
+    // No interpolation needed (no wired input tokens, no context blocks, no extra
+    // instruction). Emit a plain string literal — but use `rewritten`, which has
+    // any {{out:NAME}} tokens replaced by their bare names, not the raw base.
+    return `await agent(${jsString(rewritten)}, { label: ${label} })`;
   }
   // Escape the literal text (sentinels survive), then substitute each sentinel
   // with its `${expr}` interpolation.

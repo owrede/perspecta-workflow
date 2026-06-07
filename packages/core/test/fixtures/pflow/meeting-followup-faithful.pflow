@@ -27,21 +27,21 @@
       "id": "read",
       "kind": "agent",
       "label": "Read meeting note",
-      "prompt": "Read the meeting note named in the context (its `meeting` value), a note with `class: Meeting Notes`, from the vault. Load its participants, topics, decisions, and any open action items into a structured digest. Return that material as the meeting_note for the drafting step.",
-      "inputs": [{ "id": "meeting", "name": "meeting", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "meeting_note", "name": "meeting_note", "schema": { "type": "string" } }],
+      "prompt": "Read the meeting note named {{in:meeting}} — a note with `class: Meeting Notes`, from the vault. Load its participants, topics, decisions, and any open action items into a structured digest. Return that material as the {{out:meeting_note}} for the drafting step.",
+      "inputs": [{ "id": "in:meeting", "name": "meeting", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:meeting_note", "name": "meeting_note", "schema": { "type": "string" } }],
       "phase": "Gather"
     },
     {
       "id": "draft",
       "kind": "agent",
       "label": "Draft follow-up",
-      "prompt": "Draft a follow-up for the meeting, grounded ONLY in the provided meeting_note:\n- A 2–3 sentence summary of what was discussed and decided.\n- A bulleted list of concrete action items, each with an owner if one was named.\nIf a `fix` note is present in context (from a prior review pass), apply it: assign owners to any action items that lack one. Return the full follow-up: the summary followed by the action-item list.",
+      "prompt": "Draft a follow-up for the meeting, grounded ONLY in the provided meeting note:\n\n{{in:meeting_note}}\n\n- A 2–3 sentence summary of what was discussed and decided.\n- A bulleted list of concrete action items, each with an owner if one was named.\nIf a fix note is present from a prior review pass, apply it: assign owners to any action items that lack one.\n\n{{in:fix}}\n\nReturn the full follow-up as the {{out:draft}}: the summary followed by the action-item list.",
       "inputs": [
-        { "id": "meeting_note", "name": "meeting_note", "schema": { "type": "string" }, "required": true },
-        { "id": "fix", "name": "fix", "schema": { "type": "string" } }
+        { "id": "in:meeting_note", "name": "meeting_note", "schema": { "type": "string" }, "required": true },
+        { "id": "in:fix", "name": "fix", "schema": { "type": "string" } }
       ],
-      "outputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:draft", "name": "draft", "schema": { "type": "string" } }],
       "phase": "Draft"
     },
     {
@@ -50,7 +50,7 @@
       "label": "Review owners",
       "prompt": "Review the action items in the drafted follow-up below. Every action item MUST name an owner. For any item without an owner, determine the most plausible owner from the meeting's participants; if truly unknown, mark the owner as `?`. On the FIRST line emit exactly `ALL_OWNED: yes` if every action item now has an owner (or `?`), otherwise emit `ALL_OWNED: no` followed by the specific fix instructions for the next drafting pass.",
       "inputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "fix", "name": "fix", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out", "name": "fix", "schema": { "type": "string" } }],
       "phase": "Review",
       "config": { "maxPasses": 3, "sentinel": "ALL_OWNED:\\s*yes" }
     },
@@ -58,45 +58,45 @@
       "id": "format",
       "kind": "agent",
       "label": "Format note",
-      "prompt": "Render the final follow-up note by filling this exact template, substituting the values and leaving the surrounding Markdown exactly as written. Use the meeting name from context and the reviewed follow-up content (summary + owned action items) from context. Output ONLY the rendered note:\n\n# Follow-up — {{meeting}}\n\n{{reviewed}}",
+      "prompt": "Render the final follow-up note by filling this exact template, substituting the values and leaving the surrounding Markdown exactly as written. Output ONLY the rendered note:\n\n# Follow-up — {{in:meeting}}\n\n{{in:reviewed}}\n\nReturn the rendered note as the {{out:formatted}} note.",
       "inputs": [
-        { "id": "meeting", "name": "meeting", "schema": { "type": "string" }, "required": true },
-        { "id": "reviewed", "name": "reviewed", "schema": { "type": "string" }, "required": true }
+        { "id": "in:meeting", "name": "meeting", "schema": { "type": "string" }, "required": true },
+        { "id": "in:reviewed", "name": "reviewed", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "formatted", "name": "formatted", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:formatted", "name": "formatted", "schema": { "type": "string" } }],
       "phase": "Format"
     },
     {
       "id": "save",
       "kind": "agent",
       "label": "Save follow-up",
-      "prompt": "Save the formatted meeting follow-up to disk via the write_note tool.\n- target_folder: Meetings/Follow-ups\n- filename: \"<meeting> — Follow-up.md\" (fill in the meeting name from context)\n- on_exists: version (write a numbered variant if it already exists)\nThe exact note body to write is the formatted text from context. Return the written path as saved_path.",
+      "prompt": "Save the formatted meeting follow-up to disk via the write_note tool.\n- target_folder: Meetings/Follow-ups\n- filename: \"{{in:meeting}} — Follow-up.md\"\n- on_exists: version (write a numbered variant if it already exists)\nThe exact note body to write is the formatted text:\n\n{{in:formatted}}\n\nReturn the written path as the {{out:saved_path}}.",
       "inputs": [
-        { "id": "meeting", "name": "meeting", "schema": { "type": "string" }, "required": true },
-        { "id": "formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
+        { "id": "in:meeting", "name": "meeting", "schema": { "type": "string" }, "required": true },
+        { "id": "in:formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:saved_path", "name": "saved_path", "schema": { "type": "string" } }],
       "phase": "Save"
     },
     {
       "id": "end",
       "kind": "output",
       "label": "Done",
-      "inputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" }, "required": true }],
+      "inputs": [{ "id": "in", "name": "saved_path", "schema": { "type": "string" }, "required": true }],
       "outputs": [],
       "phase": "Done"
     }
   ],
   "wires": [
-    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "read", "portId": "meeting" } },
-    { "from": { "nodeId": "read", "portId": "meeting_note" }, "to": { "nodeId": "draft", "portId": "meeting_note" } },
-    { "from": { "nodeId": "draft", "portId": "draft" }, "to": { "nodeId": "review", "portId": "draft" } },
-    { "from": { "nodeId": "review", "portId": "fix" }, "to": { "nodeId": "draft", "portId": "fix" } },
-    { "from": { "nodeId": "draft", "portId": "draft" }, "to": { "nodeId": "format", "portId": "reviewed" } },
-    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "format", "portId": "meeting" } },
-    { "from": { "nodeId": "format", "portId": "formatted" }, "to": { "nodeId": "save", "portId": "formatted" } },
-    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "save", "portId": "meeting" } },
-    { "from": { "nodeId": "save", "portId": "saved_path" }, "to": { "nodeId": "end", "portId": "saved_path" } }
+    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "read", "portId": "in:meeting" } },
+    { "from": { "nodeId": "read", "portId": "out:meeting_note" }, "to": { "nodeId": "draft", "portId": "in:meeting_note" } },
+    { "from": { "nodeId": "draft", "portId": "out:draft" }, "to": { "nodeId": "review", "portId": "draft" } },
+    { "from": { "nodeId": "review", "portId": "out" }, "to": { "nodeId": "draft", "portId": "in:fix" } },
+    { "from": { "nodeId": "draft", "portId": "out:draft" }, "to": { "nodeId": "format", "portId": "in:reviewed" } },
+    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "format", "portId": "in:meeting" } },
+    { "from": { "nodeId": "format", "portId": "out:formatted" }, "to": { "nodeId": "save", "portId": "in:formatted" } },
+    { "from": { "nodeId": "in", "portId": "meeting" }, "to": { "nodeId": "save", "portId": "in:meeting" } },
+    { "from": { "nodeId": "save", "portId": "out:saved_path" }, "to": { "nodeId": "end", "portId": "in" } }
   ],
   "editor": {
     "viewport": { "x": 0, "y": 0, "zoom": 1 },

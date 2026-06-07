@@ -36,6 +36,30 @@ describe("input token interpolation (string)", () => {
   });
 });
 
+describe("output token rendering (name in place)", () => {
+  function docWithOutput(prompt: string): PflowDocument {
+    return {
+      pflowFormatVersion: 1,
+      workflow: { name: "o", description: "d" },
+      nodes: [
+        { id: "ag", kind: "agent", label: "Make", prompt, inputs: [], outputs: [{ id: "out:draft", name: "draft", schema: { type: "string" } }] },
+        { id: "out", kind: "output", label: "Out", inputs: [{ id: "i", name: "r", schema: { type: "any" } }], outputs: [] },
+      ],
+      wires: [{ from: { nodeId: "ag", portId: "out:draft" }, to: { nodeId: "out", portId: "i" } }],
+      editor: { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] },
+    };
+  }
+  it("renders a single {{out:name}} as the bare name in place", () => {
+    const code = generateClaudeCodeWorkflow(docWithOutput("Return the {{out:draft}} now."));
+    expect(code).toContain("Return the draft now.");
+    expect(code).not.toContain("{{out:draft}}");
+  });
+  it("renders every occurrence of a repeated out-token as the same name (one port)", () => {
+    const code = generateClaudeCodeWorkflow(docWithOutput("Write {{out:draft}}, revise {{out:draft}}, ship {{out:draft}}."));
+    expect(code).toContain("Write draft, revise draft, ship draft.");
+  });
+});
+
 describe("input token interpolation (json / table)", () => {
   it("json input wraps the source in JSON.stringify", () => {
     const code = generateClaudeCodeWorkflow(docWithInput("Process {{in:topic:json}} fully.", "object"));

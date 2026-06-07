@@ -46,7 +46,11 @@
       const idx = m.index ?? 0;
       appendText(text.slice(last, idx));
       const span = document.createElement("span");
-      span.className = m[1] === "in" ? "pflow-tok pflow-tok--in" : "pflow-tok pflow-tok--out";
+      // Direction picks the base colour (in = green, out = accent); an explicit
+      // :json / :table type adds a modifier class for a subtle type cue.
+      const dir = m[1] === "in" ? "pflow-tok--in" : "pflow-tok--out";
+      const type = m[3]; // undefined for a plain string token
+      span.className = `pflow-tok ${dir}${type ? ` pflow-tok--${type}` : ""}`;
       span.textContent = m[0];
       root.appendChild(span);
       last = idx + m[0].length;
@@ -182,5 +186,13 @@
   :global(.pflow-tok--out) {
     color: var(--interactive-accent);
     background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  }
+  /* Typed tokens get a dotted underline as a subtle "structured" cue, so the
+     :json / :table suffix reads as more than plain text without fighting the
+     in/out colour. */
+  :global(.pflow-tok--json),
+  :global(.pflow-tok--table) {
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
   }
 </style>

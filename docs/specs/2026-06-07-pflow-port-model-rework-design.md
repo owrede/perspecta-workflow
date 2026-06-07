@@ -1,8 +1,14 @@
-# pflow — remove "structural ports"; all ports are user-defined
+# pflow — remove "structural ports"; inspector port editor; no pseudo-prompts
 
 Date: 2026-06-07
 Branch: `feat/pflow-m2-editor`
 Status: approved direction, spec for review
+
+> Scope note: this spec now covers THREE coupled changes — (A) remove structural
+> ports (control-flow inferred from wiring), (B) an inspector port editor
+> (add/remove/retype) as the universal port-definition mechanism, (C) no text
+> field on plumbing kinds. They share the port-derivation rewrite, so they ship
+> together.
 
 ## Motivation
 
@@ -96,6 +102,56 @@ control-flow kind should arrive with the SAME minimal default as an agent — on
 only.) The user then declares real ports via tokens. Confirm `applyAddNode` uses
 this and no kind injects extra ports.
 
+## 5. Inspector port editor (B) — the universal mechanism
+
+The inspector's Ports section becomes editable for EVERY kind:
+
+- **Add port**: an "+ Add input" / "+ Add output" control. Creates a port with a
+  generated unique id (`in:<name>` / `out:<name>` once named; a transient id
+  until named), default type `string`, editable name + type. For an `input`
+  kind only outputs are addable; for `output` kind only inputs (their nature).
+- **Type picker** per port: `string | json | table` dropdown. Changing it:
+  - updates the port's `schema.type`,
+  - AND, if the port has a token in the prompt, rewrites that token's suffix
+    (`{{in:x}}` ↔ `{{in:x:json}}`) so prompt and inspector stay consistent.
+- **Rename** per port: editable name. If token-backed, rewrites the token name
+  in the prompt too.
+- **Remove** per port — governed by the lock rule below.
+
+### Token-lock rule (the sync invariant)
+
+A port is **token-locked** when a matching `{{dir:name}}` token exists in the
+node's prompt. The editor enforces:
+
+- Token-locked port → **no Remove control** (shown with a small "from prompt"
+  badge). To remove it, delete the token from the prompt.
+- Inspector-only port (no token) → **Remove control present**. Removing it drops
+  the port (and any wire on it). If the user later types its token, it becomes
+  token-locked and Remove disappears.
+- Adding a port in the inspector does NOT write a token (inspector-only ports are
+  allowed on prompt-bearing nodes). Typing the token is what locks it.
+
+`derivePortsFromPrompt` must therefore MERGE two sources for prompt-bearing kinds:
+token-derived ports (locked) + inspector-defined ports (carried on the node,
+unlocked) + orphans. For plumbing kinds, only inspector-defined ports + orphans
+(no tokens exist). Represent the lock as a derived UI property (a port is locked
+iff its name appears as a token in the current prompt) — NOT a stored flag, so it
+can never drift from the prompt.
+
+## 6. No text field on plumbing kinds (C)
+
+PROMPT kinds (agent, verify, synthesize, loop, branch) keep the prompt field.
+PLUMBING kinds (input, output, split, join) show **no prompt/dataflow field** in
+the inspector — only the port editor. Rationale: a text field on a node that
+emits no LLM call would mislead users into thinking the prose has effect.
+
+`PROMPT_KINDS` (in kind-info.ts) already gates the inspector's Prompt section —
+it lists exactly agent/verify/synthesize/loop/branch. So this is already correct
+for the field's VISIBILITY; the change is ensuring plumbing-kind ports are fully
+managed by the port editor (section 5) since they have no token path.
+
+Detect-ports button: only shown for prompt-bearing kinds (it scans a prompt).
+
 ## What does NOT change
 
 - Region detection algorithm (cycle/reachability based) — already name-agnostic.
@@ -115,13 +171,21 @@ this and no kind injects extra ports.
 
 ## Testing & gate
 
-- Unit: derivation for every kind (tokens drive ports; default in/out fallback;
-  input/output direction constraint); back-edge detection with a non-`fix` port
+- Unit (derivation): every kind derives tokens → ports; default in/out fallback;
+  input/output direction constraint; merge of token-locked + inspector-only ports
+  on prompt kinds; plumbing kinds keep only inspector ports + orphans.
+- Unit (port editor helpers, pure in flow-map): `applyAddPort`,
+  `applyRemovePort` (refuses/oops on token-locked), `applyPortType` (rewrites
+  token suffix when token-backed), `applyPortRename` (rewrites token), and a
+  `isPortTokenLocked(node, port)` predicate.
+- Unit (control-flow name-agnostic): back-edge detection with a non-`fix` port
   name; branch dispatch with arbitrary labels.
 - Codegen: regenerate + RUN all 3 migrations (loop, branch arms, dual-loop).
 - Full build + both typechecks + suites green; deploy byte-identical; manual:
-  drop a fresh loop on canvas → it has only a default in/out, no `draft`/`fix`;
-  removing an out-token reverts to default output.
+  (1) drop a fresh loop → only default in/out, no `draft`/`fix`; (2) add a port
+  in the inspector on an input node (no prompt field shown); (3) type a token →
+  its port's Remove disappears; (4) change a token-backed port's type → the
+  prompt token gains the suffix; (5) removing the token re-enables Remove.
 
 ## Out of scope
 

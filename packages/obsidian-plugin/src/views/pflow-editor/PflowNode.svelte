@@ -54,7 +54,7 @@
         type="target"
         position={inSide}
         id={port.id}
-        class="pflow-handle pflow-handle--in {port.required === false ? '' : 'pflow-handle--req'}"
+        class="pflow-handle pflow-handle--in {port.wired ? 'pflow-handle--wired' : ''}"
         style={`top:${inTop(i)}px`}
       />
     {/each}
@@ -67,7 +67,7 @@
         type="source"
         position={outSide}
         id={port.id}
-        class="pflow-handle pflow-handle--out"
+        class="pflow-handle pflow-handle--out {port.wired ? 'pflow-handle--wired' : ''}"
         style={`top:${outTop(i)}px`}
       />
     {/each}
@@ -83,6 +83,10 @@
     border: 1px solid var(--background-modifier-border);
     border-left: 4px solid var(--pflow-accent, var(--text-muted));
     border-radius: var(--radius-m, 6px);
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    font-size: var(--font-ui-small);
+    box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.08));
     /* the 4px accent stripe is on the inflow side; flipped nodes move it right */
   }
   /* Flipped (loop) node: inflow is on the right, so move the accent stripe and
@@ -90,10 +94,6 @@
   .pflow-node--flipped {
     border-left: 1px solid var(--background-modifier-border);
     border-right: 4px solid var(--pflow-accent, var(--text-muted));
-    color: var(--text-normal);
-    font-family: var(--font-interface);
-    font-size: var(--font-ui-small);
-    box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.08));
   }
 
   /* kind accent colours (left border) */
@@ -180,10 +180,13 @@
     cursor: crosshair;
     transition: border-color 80ms ease-out, background 80ms ease-out;
   }
-  :global(.pflow-handle--req.svelte-flow__handle) {
+  /* A wired (connected) handle is FILLED; an unconnected one stays hollow.
+     Outputs fill with the accent colour (they drive a wire); inputs fill with
+     the muted dot. Independent of `required`. */
+  :global(.pflow-handle--wired.pflow-handle--in.svelte-flow__handle) {
     background: var(--text-muted);
   }
-  :global(.pflow-handle--out.svelte-flow__handle) {
+  :global(.pflow-handle--wired.pflow-handle--out.svelte-flow__handle) {
     border-color: var(--interactive-accent, var(--text-accent));
     background: var(--interactive-accent, var(--text-accent));
   }

@@ -97,9 +97,9 @@
   // removing, renaming, or retyping a port re-seeds the card. Without this, a
   // port edit that does NOT change the prompt (e.g. adding/removing a token-less
   // inspector port) would leave the canvas node stale.
-  function portsKey(data: { inputs: { id: string; name: string; schema: { type: string }; orphan?: boolean }[]; outputs: { id: string; name: string; schema: { type: string }; orphan?: boolean }[] }): string {
-    const sig = (p: { id: string; name: string; schema: { type: string }; orphan?: boolean }) =>
-      `${p.id}~${p.name}~${p.schema.type}~${p.orphan ? 1 : 0}`;
+  function portsKey(data: { inputs: { id: string; name: string; schema: { type: string }; orphan?: boolean; wired?: boolean }[]; outputs: { id: string; name: string; schema: { type: string }; orphan?: boolean; wired?: boolean }[] }): string {
+    const sig = (p: { id: string; name: string; schema: { type: string }; orphan?: boolean; wired?: boolean }) =>
+      `${p.id}~${p.name}~${p.schema.type}~${p.orphan ? 1 : 0}~${p.wired ? 1 : 0}`;
     return `${data.inputs.map(sig).join(",")}/${data.outputs.map(sig).join(",")}`;
   }
   function contentKey(list: Node[]): string {

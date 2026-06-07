@@ -34,6 +34,16 @@ describe("toFlowNodes", () => {
     expect(ag.data.inputs[0].name).toBe("topic");
     expect(ag.data.outputs[0].name).toBe("notes");
   });
+  it("marks a port wired iff a wire touches it (drives the filled dot)", () => {
+    const nodes = toFlowNodes(DOC);
+    const ag = nodes.find((n) => n.id === "ag")!;
+    const inNode = nodes.find((n) => n.id === "in")!;
+    // ag.in:i is the target of the only wire → wired; ag.out:r is unwired.
+    expect(ag.data.inputs[0].wired).toBe(true);
+    expect(ag.data.outputs[0].wired).toBe(false);
+    // in.out:o is the source of the wire → wired.
+    expect(inNode.data.outputs[0].wired).toBe(true);
+  });
 });
 
 describe("toFlowEdges", () => {

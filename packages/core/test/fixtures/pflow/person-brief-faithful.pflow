@@ -27,21 +27,21 @@
       "id": "read",
       "kind": "agent",
       "label": "Read person note",
-      "prompt": "Read the note for the person named in context (its `person` value) from `Netzwerk/Personen/`. Load their role, organisation, career path, and cluster hints into a structured digest. Return that material as person_note for the drafting step.",
-      "inputs": [{ "id": "person", "name": "person", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "person_note", "name": "person_note", "schema": { "type": "string" } }],
+      "prompt": "Read the note for the person named {{in:person}} from `Netzwerk/Personen/`. Load their role, organisation, career path, and cluster hints into a structured digest. Return that material as the {{out:person_note}} for the drafting step.",
+      "inputs": [{ "id": "in:person", "name": "person", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:person_note", "name": "person_note", "schema": { "type": "string" } }],
       "phase": "Gather"
     },
     {
       "id": "draft",
       "kind": "agent",
       "label": "Draft brief",
-      "prompt": "Draft a 3–5 sentence network brief about the person, grounded ONLY in person_note:\n- Who they are (current role + organisation)\n- One or two career highlights\n- Why they matter for Intelligence Impact (cluster hints)\nReturn the brief text.",
+      "prompt": "Draft a 3–5 sentence network brief about {{in:person}}, grounded ONLY in the provided person note:\n\n{{in:person_note}}\n\n- Who they are (current role + organisation)\n- One or two career highlights\n- Why they matter for Intelligence Impact (cluster hints)\nReturn the brief text as the {{out:draft}}.",
       "inputs": [
-        { "id": "person", "name": "person", "schema": { "type": "string" }, "required": true },
-        { "id": "person_note", "name": "person_note", "schema": { "type": "string" }, "required": true }
+        { "id": "in:person", "name": "person", "schema": { "type": "string" }, "required": true },
+        { "id": "in:person_note", "name": "person_note", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:draft", "name": "draft", "schema": { "type": "string" } }],
       "phase": "Draft"
     },
     {
@@ -60,56 +60,56 @@
       "id": "condense",
       "kind": "agent",
       "label": "Condense",
-      "prompt": "The brief below is too long. Condense it to at most 5 sentences while keeping the role, one career highlight, and the Intelligence Impact relevance. Return the shortened brief.",
-      "inputs": [{ "id": "long", "name": "long", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "draft", "name": "draft", "schema": { "type": "string" } }],
+      "prompt": "The brief below is too long:\n\n{{in:long}}\n\nCondense it to at most 5 sentences while keeping the role, one career highlight, and the Intelligence Impact relevance. Return the shortened brief as the {{out:draft}}.",
+      "inputs": [{ "id": "in:long", "name": "long", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:draft", "name": "draft", "schema": { "type": "string" } }],
       "phase": "Condense"
     },
     {
       "id": "format",
       "kind": "agent",
       "label": "Format note",
-      "prompt": "Render the final brief note by filling this exact template, substituting the values and leaving the surrounding Markdown exactly as written. Use the person name from context and the brief content from context. Output ONLY the rendered note:\n\n# Brief — {{person}}\n\n{{draft}}",
+      "prompt": "Render the final brief note by filling this exact template, substituting the values and leaving the surrounding Markdown exactly as written. Output ONLY the rendered note:\n\n# Brief — {{in:person}}\n\n{{in:draft}}\n\nReturn the rendered note as the {{out:formatted}} note.",
       "inputs": [
-        { "id": "person", "name": "person", "schema": { "type": "string" }, "required": true },
-        { "id": "draft", "name": "draft", "schema": { "type": "string" }, "required": true }
+        { "id": "in:person", "name": "person", "schema": { "type": "string" }, "required": true },
+        { "id": "in:draft", "name": "draft", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "formatted", "name": "formatted", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:formatted", "name": "formatted", "schema": { "type": "string" } }],
       "phase": "Format"
     },
     {
       "id": "save",
       "kind": "agent",
       "label": "Save brief",
-      "prompt": "Save the formatted person brief to disk via the write_note tool.\n- target_folder: Netzwerk/Personen\n- filename: \"<person> — Brief.md\" (fill in the person name from context)\n- on_exists: version (write a numbered variant if it already exists)\nThe exact note body to write is the formatted text from context. Return the written path as saved_path.",
+      "prompt": "Save the formatted person brief to disk via the write_note tool.\n- target_folder: Netzwerk/Personen\n- filename: \"{{in:person}} — Brief.md\"\n- on_exists: version (write a numbered variant if it already exists)\nThe exact note body to write is the formatted text:\n\n{{in:formatted}}\n\nReturn the written path as the {{out:saved_path}}.",
       "inputs": [
-        { "id": "person", "name": "person", "schema": { "type": "string" }, "required": true },
-        { "id": "formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
+        { "id": "in:person", "name": "person", "schema": { "type": "string" }, "required": true },
+        { "id": "in:formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:saved_path", "name": "saved_path", "schema": { "type": "string" } }],
       "phase": "Save"
     },
     {
       "id": "end",
       "kind": "output",
       "label": "Done",
-      "inputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" }, "required": true }],
+      "inputs": [{ "id": "in", "name": "saved_path", "schema": { "type": "string" }, "required": true }],
       "outputs": [],
       "phase": "Done"
     }
   ],
   "wires": [
-    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "read", "portId": "person" } },
-    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "draft", "portId": "person" } },
-    { "from": { "nodeId": "read", "portId": "person_note" }, "to": { "nodeId": "draft", "portId": "person_note" } },
-    { "from": { "nodeId": "draft", "portId": "draft" }, "to": { "nodeId": "length", "portId": "draft" } },
-    { "from": { "nodeId": "length", "portId": "long" }, "to": { "nodeId": "condense", "portId": "long" } },
-    { "from": { "nodeId": "condense", "portId": "draft" }, "to": { "nodeId": "format", "portId": "draft" } },
-    { "from": { "nodeId": "length", "portId": "ok" }, "to": { "nodeId": "format", "portId": "draft" } },
-    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "format", "portId": "person" } },
-    { "from": { "nodeId": "format", "portId": "formatted" }, "to": { "nodeId": "save", "portId": "formatted" } },
-    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "save", "portId": "person" } },
-    { "from": { "nodeId": "save", "portId": "saved_path" }, "to": { "nodeId": "end", "portId": "saved_path" } }
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "read", "portId": "in:person" } },
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "draft", "portId": "in:person" } },
+    { "from": { "nodeId": "read", "portId": "out:person_note" }, "to": { "nodeId": "draft", "portId": "in:person_note" } },
+    { "from": { "nodeId": "draft", "portId": "out:draft" }, "to": { "nodeId": "length", "portId": "draft" } },
+    { "from": { "nodeId": "length", "portId": "long" }, "to": { "nodeId": "condense", "portId": "in:long" } },
+    { "from": { "nodeId": "condense", "portId": "out:draft" }, "to": { "nodeId": "format", "portId": "in:draft" } },
+    { "from": { "nodeId": "length", "portId": "ok" }, "to": { "nodeId": "format", "portId": "in:draft" } },
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "format", "portId": "in:person" } },
+    { "from": { "nodeId": "format", "portId": "out:formatted" }, "to": { "nodeId": "save", "portId": "in:formatted" } },
+    { "from": { "nodeId": "in", "portId": "person" }, "to": { "nodeId": "save", "portId": "in:person" } },
+    { "from": { "nodeId": "save", "portId": "out:saved_path" }, "to": { "nodeId": "end", "portId": "in" } }
   ],
   "editor": {
     "viewport": { "x": 0, "y": 0, "zoom": 1 },

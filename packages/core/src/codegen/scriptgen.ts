@@ -197,7 +197,13 @@ export function buildAgentCall(
   for (const tok of tokens.inputs) {
     const portId = `in:${tok.name}`;
     consumed.add(portId);
-    const expr = typedSourceExpr(tokenInputSource(doc, node, tok.name), tok.type);
+    // A reconvergence override (e.g. a branch result var) takes precedence over
+    // the wire's normal source — the same precedence the context-block path uses
+    // — so a token feeding a node downstream of a branch reads the unified result
+    // var, not an arm-local var that exists in only one arm.
+    const override = portOverrides?.get(portId);
+    const rawSource = override ?? tokenInputSource(doc, node, tok.name);
+    const expr = typedSourceExpr(rawSource, tok.type);
     const sentinel = tokenSentinel(substitutions.length);
     // Replace EVERY occurrence of this exact token spelling (with and without an
     // explicit type suffix — the parser already normalized the name).

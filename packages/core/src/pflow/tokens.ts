@@ -1,5 +1,3 @@
-import type { NodeKind } from "./schema.js";
-
 /** The value-shape a token declares. Only these change generated code:
  *  string → bare interpolation; json → JSON.stringify; table → Markdown table.
  *  (filename/path/note-name are all strings to the LLM, so they are NOT types.) */
@@ -43,22 +41,6 @@ export function parsePromptTokens(prompt: string): PromptTokens {
   }
   return { inputs, outputs };
 }
-
-/** Protected structural port ids per kind: ids the prompt-token derivation must
- *  never remove. agent → empty (tokens fully own its ports); structural kinds →
- *  their default-port ids, so tokens only ADD. */
-export const STRUCTURAL_PORT_IDS: Record<NodeKind, { inputs: string[]; outputs: string[] }> = {
-  input: { inputs: [], outputs: ["out"] },
-  output: { inputs: ["in"], outputs: [] },
-  agent: { inputs: [], outputs: [] },
-  split: { inputs: ["in"], outputs: ["out"] },
-  join: { inputs: ["in"], outputs: ["out"] },
-  loop: { inputs: ["in"], outputs: ["out"] },
-  verify: { inputs: ["in"], outputs: ["out"] },
-  synthesize: { inputs: ["in"], outputs: ["out"] },
-  branch: { inputs: ["in"], outputs: ["out"] },
-  script: { inputs: ["in"], outputs: ["out"] },
-};
 
 /** The PortSchema type that best represents a token type, for the derived port's
  *  `schema.type`. The TOKEN type keyword (carried separately on derivation) is

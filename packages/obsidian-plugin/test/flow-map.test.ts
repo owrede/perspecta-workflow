@@ -305,11 +305,27 @@ describe("derivePortsFromPrompt", () => {
     const r = derivePortsFromPrompt(node, []);
     expect(r.outputs.map((p) => p.id)).toEqual(["out:draft"]); // no default `out`
   });
-  it("structural kind: tokens ADD, structural port preserved", () => {
-    const loop = { id: "lp", kind: "loop" as const, label: "L", prompt: "{{in:extra}}", inputs: [{ id: "in", name: "draft", schema: { type: "any" as const }, required: true }], outputs: [{ id: "out", name: "fix", schema: { type: "any" as const } }] };
+  it("loop derives ports from tokens only — no hardcoded draft/fix", () => {
+    const loop = { id: "lp", kind: "loop" as const, label: "L", prompt: "Emit {{out:verdict}} from {{in:work}}.", inputs: [], outputs: [] };
     const r = derivePortsFromPrompt(loop, []);
-    expect(r.inputs.map((p) => p.id).sort()).toEqual(["in", "in:extra"].sort());
-    expect(r.outputs.map((p) => p.id)).toContain("out");
+    expect(r.inputs.map((p) => p.id)).toEqual(["in:work"]);
+    expect(r.outputs.map((p) => p.id)).toEqual(["out:verdict"]);
+  });
+  it("loop with no out-token keeps a default out (fallback applies to all kinds)", () => {
+    const loop = { id: "lp", kind: "loop" as const, label: "L", prompt: "Process {{in:work}}.", inputs: [], outputs: [] };
+    const r = derivePortsFromPrompt(loop, []);
+    expect(r.outputs.map((p) => p.id)).toEqual(["out"]);
+  });
+  it("merges an inspector-only (token-less) port with token ports", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "Use {{in:topic}}.", inputs: [{ id: "in:extra", name: "extra", schema: { type: "string" as const } }], outputs: [] };
+    const r = derivePortsFromPrompt(node, []);
+    expect(r.inputs.map((p) => p.id).sort()).toEqual(["in:extra", "in:topic"].sort());
+  });
+  it("input kind never gains an input; output kind never gains an output", () => {
+    const inp = { id: "in", kind: "input" as const, label: "In", prompt: "", inputs: [], outputs: [] };
+    expect(derivePortsFromPrompt(inp, []).inputs).toEqual([]);
+    const outp = { id: "o", kind: "output" as const, label: "Out", prompt: "", inputs: [], outputs: [] };
+    expect(derivePortsFromPrompt(outp, []).outputs).toEqual([]);
   });
   it("carries the token's declared type onto the port schema", () => {
     const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:data:json}} {{out:rows:table}} {{in:plain}}", inputs: [], outputs: [] };
@@ -318,21 +334,18 @@ describe("derivePortsFromPrompt", () => {
     expect(r.inputs.find((p) => p.id === "in:plain")?.schema.type).toBe("string");
     expect(r.outputs.find((p) => p.id === "out:rows")?.schema.type).toBe("array");
   });
-  it("a token whose NAME matches a structural port maps to it (no duplicate)", () => {
-    // loop has a structural output port id `out` named `fix`. A {{out:fix}} token
-    // must NOT create a second `fix` output — it maps onto the structural one.
+  it("a token does not create a duplicate of a same-named existing port", () => {
+    // existing inspector port `fix` (id out:fix) + a {{out:fix}} token -> one port
     const loop = {
       id: "lp",
       kind: "loop" as const,
       label: "L",
       prompt: "Emit the {{out:fix}} instructions.",
-      inputs: [{ id: "in", name: "draft", schema: { type: "string" as const }, required: true }],
-      outputs: [{ id: "out", name: "fix", schema: { type: "string" as const } }],
+      inputs: [{ id: "in:draft", name: "draft", schema: { type: "string" as const }, required: true }],
+      outputs: [{ id: "out:fix", name: "fix", schema: { type: "string" as const } }],
     };
     const r = derivePortsFromPrompt(loop, []);
-    const fixPorts = r.outputs.filter((p) => p.name === "fix");
-    expect(fixPorts).toHaveLength(1);
-    expect(fixPorts[0].id).toBe("out"); // the structural port, not out:fix
+    expect(r.outputs.filter((p) => p.name === "fix")).toHaveLength(1);
   });
   it("a wired port dropped by an edited prompt becomes an orphan", () => {
     const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:topic}}", inputs: [{ id: "in:notes", name: "notes", schema: { type: "any" as const } }], outputs: [] };
@@ -345,16 +358,16 @@ describe("derivePortsFromPrompt", () => {
 
 import { applyDetectPorts } from "../src/views/pflow-editor/flow-map.js";
 
-import { dedupeStructuralPorts } from "../src/views/pflow-editor/flow-map.js";
+import { dedupeDuplicateNamedPorts } from "../src/views/pflow-editor/flow-map.js";
 
-describe("dedupeStructuralPorts", () => {
-  it("removes a non-structural port duplicating a structural name + its wires", () => {
+describe("dedupeDuplicateNamedPorts", () => {
+  it("removes a same-named duplicate port (keep first) + its wires", () => {
     const doc: PflowDocument = {
       ...DOC,
       nodes: [
         {
           id: "lp", kind: "loop", label: "Review", prompt: "Emit {{out:fix}}.",
-          inputs: [{ id: "in", name: "draft", schema: { type: "string" } }],
+          inputs: [{ id: "in:draft", name: "draft", schema: { type: "string" } }],
           outputs: [
             { id: "out", name: "fix", schema: { type: "string" } },
             { id: "out:fix", name: "fix", schema: { type: "string" } },
@@ -364,15 +377,14 @@ describe("dedupeStructuralPorts", () => {
       ],
       wires: [{ from: { nodeId: "lp", portId: "out:fix" }, to: { nodeId: "d", portId: "in:fix" } }],
     };
-    const healed = dedupeStructuralPorts(doc);
+    const healed = dedupeDuplicateNamedPorts(doc);
     const lp = healed.nodes.find((n) => n.id === "lp")!;
     expect(lp.outputs.filter((p) => p.name === "fix")).toHaveLength(1);
-    expect(lp.outputs[0].id).toBe("out");
-    // the wire referencing the removed out:fix is pruned
-    expect(healed.wires).toHaveLength(0);
+    expect(lp.outputs[0].id).toBe("out"); // first wins
+    expect(healed.wires).toHaveLength(0); // wire on the dropped out:fix pruned
   });
   it("returns the same object when there is nothing to heal", () => {
-    expect(dedupeStructuralPorts(DOC)).toBe(DOC);
+    expect(dedupeDuplicateNamedPorts(DOC)).toBe(DOC);
   });
 });
 
@@ -442,19 +454,21 @@ describe("applyPromptAndDerivePorts", () => {
     const next = applyPromptAndDerivePorts(DOC, "ag", "{{in:topic}} {{out:r}}");
     const ag = next.nodes.find((n) => n.id === "ag")!;
     expect(ag.prompt).toBe("{{in:topic}} {{out:r}}");
-    // 'topic' is the new derived input; the fixture's existing input port 'i' is
-    // WIRED (in.o->ag.i), so it survives as an orphan rather than being dropped.
-    expect(ag.inputs.map((p) => p.id)).toEqual(["in:topic", "i"]);
-    expect(ag.inputs.find((p) => p.id === "i")?.orphan).toBe(true);
-    expect(ag.outputs.map((p) => p.id)).toEqual(["out:r"]);
+    // input 'i' has name 'topic' — the same NAME as the {{in:topic}} token, so it
+    // is de-duplicated (one 'topic' input, the token wins).
+    expect(ag.inputs.map((p) => p.id)).toEqual(["in:topic"]);
+    // output 'r' (name 'notes') is an inspector-defined port the prompt doesn't
+    // mention; it is KEPT alongside the new token output 'out:r'.
+    expect(ag.outputs.map((p) => p.id).sort()).toEqual(["out:r", "r"].sort());
     expect(DOC.nodes.find((n) => n.id === "ag")!.prompt).toBe("p");
   });
-  it("drops a non-wired port that the prompt no longer declares (no orphan)", () => {
-    // ag's output port 'r' is NOT wired in DOC, so a prompt declaring only
-    // {{out:done}} replaces it cleanly — no orphan.
+  it("keeps an inspector-defined (token-less, unwired) port the prompt omits", () => {
+    // ag's output 'r' (name 'notes') has no token and no wire — it is a valid
+    // inspector-defined port, so it survives a prompt change. (Removing it is the
+    // inspector's job, not derivation's.)
     const next = applyPromptAndDerivePorts(DOC, "ag", "{{in:topic}} {{out:done}}");
     const ag = next.nodes.find((n) => n.id === "ag")!;
-    expect(ag.outputs.map((p) => p.id)).toEqual(["out:done"]);
+    expect(ag.outputs.map((p) => p.id).sort()).toEqual(["out:done", "r"].sort());
   });
 });
 

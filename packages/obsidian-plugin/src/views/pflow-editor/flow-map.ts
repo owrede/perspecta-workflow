@@ -1,5 +1,5 @@
 import { MarkerType } from "@xyflow/system";
-import { NODE_KINDS, parsePromptTokens, STRUCTURAL_PORT_IDS, portSchemaTypeForToken } from "@perspecta/core";
+import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken } from "@perspecta/core";
 import type { TokenPort } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 
@@ -114,17 +114,21 @@ export function applyInspectorWidth(doc: PflowDocument, width: number): PflowDoc
   return { ...doc, editor: { ...editor, inspectorWidth: clamped } };
 }
 
-/** Compute the ports a node's prompt implies. agent: tokens replace (no tokens
- *  & no wires -> default in/out). structural kinds: tokens ADD; the kind's
- *  structural ports (by id) are kept. Any current port that is wired but no
- *  longer derived (and not structural) is KEPT as an orphan so its wire survives
- *  as a dashed (inactive) edge. Pure over (node, wires). */
+/** Compute a node's ports. There are NO structural ports: control-flow is
+ *  inferred from wiring, not port names, so EVERY kind derives ports the same
+ *  way — the union of:
+ *    (a) prompt token ports ({{in:}}/{{out:}}), the "locked" prompt-declared ports;
+ *    (b) inspector-defined ports already on the node (not duplicating a token
+ *        NAME) — these are token-less ports the user added directly;
+ *  with orphan marking for a wired token-style port whose token is gone, and a
+ *  per-side default fallback (one `in`/`out`) when a side ends up empty — except
+ *  the direction a kind lacks (input has no inputs, output has no outputs).
+ *  Pure over (node, wires). */
 export function derivePortsFromPrompt(
   node: { id: string; kind: NodeKind; prompt?: string; inputs: Port[]; outputs: Port[] },
   wires: Wire[],
 ): { inputs: Port[]; outputs: Port[] } {
   const { inputs: inToks, outputs: outToks } = parsePromptTokens(node.prompt ?? "");
-  const structural = STRUCTURAL_PORT_IDS[node.kind];
   // A token's declared type becomes the port's schema.type (string/object/array).
   const tokenInput = (t: TokenPort): Port => ({
     id: `in:${t.name}`,
@@ -140,60 +144,50 @@ export function derivePortsFromPrompt(
   const wiredInIds = new Set(wires.filter((w) => w.to.nodeId === node.id).map((w) => w.to.portId));
   const wiredOutIds = new Set(wires.filter((w) => w.from.nodeId === node.id).map((w) => w.from.portId));
 
-  function build(
-    toks: TokenPort[],
-    make: (t: TokenPort) => Port,
-    current: Port[],
-    structuralIds: string[],
-    wiredIds: Set<string>,
-  ): Port[] {
+  function build(toks: TokenPort[], make: (t: TokenPort) => Port, current: Port[], wiredIds: Set<string>): Port[] {
     const out: Port[] = [];
     const seenIds = new Set<string>();
-    // Names taken by a STRUCTURAL port only. A token sharing a structural port's
-    // name maps onto it (no duplicate) — e.g. loop's structural `fix` output IS
-    // the {{out:fix}} token. Orphan ports do NOT reserve names (an orphan keeps a
-    // live wire by id and must render even if a same-named token also exists).
-    const structuralNames = new Set<string>();
-    const add = (p: Port, orphan: boolean, isStructural: boolean) => {
+    const seenNames = new Set<string>();
+    const tokenNames = new Set(toks.map((t) => t.name));
+    const add = (p: Port, orphan: boolean) => {
       out.push({ ...p, orphan });
       seenIds.add(p.id);
-      if (isStructural) structuralNames.add(p.name);
+      seenNames.add(p.name);
     };
-    // 1) structural ports (preserve the node's current port object by id)
-    for (const sid of structuralIds) {
-      const cur = current.find((p) => p.id === sid);
-      if (cur) add(cur, false, true);
-    }
-    // 2) token ports. Skip a token already covered by a structural port (same id
-    //    or same name), so {{out:fix}} doesn't create a second `fix`.
+    // 1) token ports (locked, prompt-declared)
     for (const t of toks) {
       const p = make(t);
-      if (seenIds.has(p.id) || structuralNames.has(p.name)) continue;
-      add(p, false, false);
+      if (!seenNames.has(p.name)) add(p, false);
     }
-    // 3) orphans: a current port still referenced by a wire but not (re-)derived
-    //    and not a structural-name duplicate.
+    // 2) existing ports the tokens didn't cover: inspector-defined ports (kept),
+    //    or a wired token-style port whose token vanished (orphan, dashed). A
+    //    bare DEFAULT-fallback port (id+name exactly `in`/`out`) is NOT a
+    //    user-added port — it is dropped once any token of this direction exists,
+    //    so the first token replaces the default rather than coexisting with it.
+    const isDefaultFallback = (p: Port) => (p.id === "in" && p.name === "in") || (p.id === "out" && p.name === "out");
     for (const cur of current) {
-      if (seenIds.has(cur.id) || structuralNames.has(cur.name)) continue;
-      if (wiredIds.has(cur.id)) add(cur, true, false);
+      if (seenIds.has(cur.id) || seenNames.has(cur.name)) continue;
+      if (toks.length > 0 && isDefaultFallback(cur)) continue; // default replaced by tokens
+      const looksTokenId = /^(in|out):/.test(cur.id);
+      const orphan = looksTokenId && wiredIds.has(cur.id) && !tokenNames.has(cur.name);
+      add(cur, orphan);
     }
     return out;
   }
 
-  let inputs = build(inToks, tokenInput, node.inputs, structural.inputs, wiredInIds);
-  let outputs = build(outToks, tokenOutput, node.outputs, structural.outputs, wiredOutIds);
+  let inputs = build(inToks, tokenInput, node.inputs, wiredInIds);
+  let outputs = build(outToks, tokenOutput, node.outputs, wiredOutIds);
 
-  // agent fallback — applied INDEPENDENTLY per side: an agent with no {{in:}}
-  // token (and no wired input) keeps the default `in`; an agent with no {{out:}}
-  // token (and no wired output) keeps the default `out`. As soon as ANY token of
-  // that direction appears, the default is replaced by the named token port(s).
-  // (input/output kinds are sink/source-only, so they are NOT given the missing
-  // side — only `agent`.)
-  if (node.kind === "agent") {
-    const def = defaultPortsForKind("agent");
-    if (inputs.length === 0) inputs = def.inputs;
-    if (outputs.length === 0) outputs = def.outputs;
-  }
+  // Direction constraint: input is source-only, output is sink-only.
+  if (node.kind === "input") inputs = [];
+  if (node.kind === "output") outputs = [];
+
+  // Per-side default fallback (all other kinds): an empty side gets one default
+  // port, so a node always has a way to connect. The first token of that
+  // direction replaces the default.
+  const def = defaultPortsForKind(node.kind);
+  if (node.kind !== "input" && inputs.length === 0) inputs = def.inputs;
+  if (node.kind !== "output" && outputs.length === 0) outputs = def.outputs;
   return { inputs, outputs };
 }
 
@@ -246,34 +240,29 @@ function escapeForRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Heal a document that carries DUPLICATE ports — a non-structural port whose
- *  name collides with the kind's structural port (the corruption an older
- *  Detect-ports build could persist, e.g. a loop with both `out`(fix) and
- *  `out:fix`(fix)). Drops the redundant port and any wire referencing it. Only
- *  removes provably-redundant duplicates; legitimate ports are untouched. Returns
- *  the same object when nothing changes (so callers can skip a no-op write).
- *  Immutable. */
-export function dedupeStructuralPorts(doc: PflowDocument): PflowDocument {
+/** Heal a document that carries DUPLICATE-NAMED ports on a node side — keep the
+ *  FIRST port of each name, drop later same-name duplicates and any wire on them.
+ *  (Cleans up legacy files where an older build persisted two same-named ports,
+ *  e.g. a loop with both `out`(fix) and `out:fix`(fix).) Returns the same object
+ *  when nothing changes, so a clean file is untouched. Immutable. */
+export function dedupeDuplicateNamedPorts(doc: PflowDocument): PflowDocument {
   let changed = false;
   const removed = new Set<string>(); // `${nodeId}|${portId}`
   const nodes = doc.nodes.map((n) => {
-    const structural = STRUCTURAL_PORT_IDS[n.kind];
-    const heal = (ports: Port[], structuralIds: string[]): Port[] => {
-      const structuralNames = new Set(
-        ports.filter((p) => structuralIds.includes(p.id)).map((p) => p.name),
-      );
+    const heal = (ports: Port[]): Port[] => {
+      const seen = new Set<string>();
       const kept = ports.filter((p) => {
-        if (structuralIds.includes(p.id)) return true;
-        if (structuralNames.has(p.name)) {
+        if (seen.has(p.name)) {
           removed.add(`${n.id}|${p.id}`);
           return false;
         }
+        seen.add(p.name);
         return true;
       });
       return kept.length === ports.length ? ports : kept; // same ref when unchanged
     };
-    const inputs = heal(n.inputs, structural.inputs);
-    const outputs = heal(n.outputs, structural.outputs);
+    const inputs = heal(n.inputs);
+    const outputs = heal(n.outputs);
     if (inputs === n.inputs && outputs === n.outputs) return n;
     changed = true;
     return { ...n, inputs, outputs };

@@ -301,6 +301,22 @@ describe("derivePortsFromPrompt", () => {
     expect(r.inputs.find((p) => p.id === "in:plain")?.schema.type).toBe("string");
     expect(r.outputs.find((p) => p.id === "out:rows")?.schema.type).toBe("array");
   });
+  it("a token whose NAME matches a structural port maps to it (no duplicate)", () => {
+    // loop has a structural output port id `out` named `fix`. A {{out:fix}} token
+    // must NOT create a second `fix` output — it maps onto the structural one.
+    const loop = {
+      id: "lp",
+      kind: "loop" as const,
+      label: "L",
+      prompt: "Emit the {{out:fix}} instructions.",
+      inputs: [{ id: "in", name: "draft", schema: { type: "string" as const }, required: true }],
+      outputs: [{ id: "out", name: "fix", schema: { type: "string" as const } }],
+    };
+    const r = derivePortsFromPrompt(loop, []);
+    const fixPorts = r.outputs.filter((p) => p.name === "fix");
+    expect(fixPorts).toHaveLength(1);
+    expect(fixPorts[0].id).toBe("out"); // the structural port, not out:fix
+  });
   it("a wired port dropped by an edited prompt becomes an orphan", () => {
     const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:topic}}", inputs: [{ id: "in:notes", name: "notes", schema: { type: "any" as const } }], outputs: [] };
     const wires = [{ from: { nodeId: "up", portId: "o" }, to: { nodeId: "ag", portId: "in:notes" } }];
@@ -339,6 +355,26 @@ describe("applyDetectPorts", () => {
     };
     const ag = applyDetectPorts(jdoc, "ag").nodes.find((n) => n.id === "ag")!;
     expect(ag.prompt).toContain("{{in:rows:table}}");
+  });
+  it("on a loop with a structural 'fix' output, detect does not create a second fix port", () => {
+    const loopDoc: PflowDocument = {
+      ...DOC,
+      nodes: [
+        {
+          id: "lp",
+          kind: "loop",
+          label: "Review",
+          prompt: "Emit ALL_OWNED then the fix instructions.",
+          inputs: [{ id: "in", name: "draft", schema: { type: "string" } }],
+          outputs: [{ id: "out", name: "fix", schema: { type: "string" } }],
+        },
+        ...DOC.nodes.filter((n) => n.id !== "ag"),
+      ],
+    };
+    const next = applyDetectPorts(loopDoc, "lp");
+    const lp = next.nodes.find((n) => n.id === "lp")!;
+    expect(lp.prompt).toContain("{{out:fix}}");
+    expect(lp.outputs.filter((p) => p.name === "fix")).toHaveLength(1);
   });
   it("does not double-wrap an already-tokenised name", () => {
     const tdoc: PflowDocument = {

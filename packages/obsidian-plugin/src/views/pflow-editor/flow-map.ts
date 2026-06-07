@@ -148,29 +148,34 @@ export function derivePortsFromPrompt(
     wiredIds: Set<string>,
   ): Port[] {
     const out: Port[] = [];
-    const seen = new Set<string>();
+    const seenIds = new Set<string>();
+    // Names taken by a STRUCTURAL port only. A token sharing a structural port's
+    // name maps onto it (no duplicate) — e.g. loop's structural `fix` output IS
+    // the {{out:fix}} token. Orphan ports do NOT reserve names (an orphan keeps a
+    // live wire by id and must render even if a same-named token also exists).
+    const structuralNames = new Set<string>();
+    const add = (p: Port, orphan: boolean, isStructural: boolean) => {
+      out.push({ ...p, orphan });
+      seenIds.add(p.id);
+      if (isStructural) structuralNames.add(p.name);
+    };
     // 1) structural ports (preserve the node's current port object by id)
     for (const sid of structuralIds) {
       const cur = current.find((p) => p.id === sid);
-      if (cur) {
-        out.push({ ...cur, orphan: false });
-        seen.add(cur.id);
-      }
+      if (cur) add(cur, false, true);
     }
-    // 2) token ports
+    // 2) token ports. Skip a token already covered by a structural port (same id
+    //    or same name), so {{out:fix}} doesn't create a second `fix`.
     for (const t of toks) {
       const p = make(t);
-      if (seen.has(p.id)) continue;
-      out.push(p);
-      seen.add(p.id);
+      if (seenIds.has(p.id) || structuralNames.has(p.name)) continue;
+      add(p, false, false);
     }
     // 3) orphans: a current port still referenced by a wire but not (re-)derived
+    //    and not a structural-name duplicate.
     for (const cur of current) {
-      if (seen.has(cur.id)) continue;
-      if (wiredIds.has(cur.id)) {
-        out.push({ ...cur, orphan: true });
-        seen.add(cur.id);
-      }
+      if (seenIds.has(cur.id) || structuralNames.has(cur.name)) continue;
+      if (wiredIds.has(cur.id)) add(cur, true, false);
     }
     return out;
   }

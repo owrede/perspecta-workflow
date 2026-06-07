@@ -310,6 +310,49 @@ describe("derivePortsFromPrompt", () => {
   });
 });
 
+import { applyDetectPorts } from "../src/views/pflow-editor/flow-map.js";
+
+describe("applyDetectPorts", () => {
+  const node = {
+    id: "ag",
+    kind: "agent" as const,
+    label: "A",
+    prompt: "Use the meeting_note and produce a summary.",
+    inputs: [{ id: "in:meeting_note", name: "meeting_note", schema: { type: "string" as const } }],
+    outputs: [{ id: "out:summary", name: "summary", schema: { type: "string" as const } }],
+  };
+  const doc: PflowDocument = { ...DOC, nodes: [node, ...DOC.nodes.filter((n) => n.id !== "ag")] };
+
+  it("wraps a port name appearing in the prompt as the matching token", () => {
+    const next = applyDetectPorts(doc, "ag");
+    const ag = next.nodes.find((n) => n.id === "ag")!;
+    expect(ag.prompt).toContain("{{in:meeting_note}}");
+    expect(ag.prompt).toContain("{{out:summary}}");
+  });
+  it("uses a typed suffix for json/table ports", () => {
+    const jdoc: PflowDocument = {
+      ...DOC,
+      nodes: [
+        { ...node, prompt: "Read the rows table.", inputs: [{ id: "in:rows", name: "rows", schema: { type: "array" as const } }], outputs: [] },
+        ...DOC.nodes.filter((n) => n.id !== "ag"),
+      ],
+    };
+    const ag = applyDetectPorts(jdoc, "ag").nodes.find((n) => n.id === "ag")!;
+    expect(ag.prompt).toContain("{{in:rows:table}}");
+  });
+  it("does not double-wrap an already-tokenised name", () => {
+    const tdoc: PflowDocument = {
+      ...DOC,
+      nodes: [
+        { ...node, prompt: "Use {{in:meeting_note}} already.", outputs: [] },
+        ...DOC.nodes.filter((n) => n.id !== "ag"),
+      ],
+    };
+    const ag = applyDetectPorts(tdoc, "ag").nodes.find((n) => n.id === "ag")!;
+    expect(ag.prompt!.match(/\{\{in:meeting_note\}\}/g)).toHaveLength(1);
+  });
+});
+
 describe("applyPromptAndDerivePorts", () => {
   it("commits prompt and re-derives ports immutably", () => {
     const next = applyPromptAndDerivePorts(DOC, "ag", "{{in:topic}} {{out:r}}");

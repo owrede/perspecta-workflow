@@ -27,6 +27,7 @@
     onKindChange,
     onWorkflowMeta,
     onArgDefault,
+    onDetectPorts,
   }: {
     node: { id: string; data: FlowNodeData } | null;
     workflow: { name: string; description: string };
@@ -36,6 +37,7 @@
     onKindChange: (nodeId: string, kind: NodeKind) => Promise<boolean> | boolean;
     onWorkflowMeta: (patch: { name?: string; description?: string }) => void;
     onArgDefault: (key: string, value: string) => void;
+    onDetectPorts: (nodeId: string) => void;
   } = $props();
 
   const info = $derived(node ? KIND_INFO[node.data.kind as NodeKind] : null);
@@ -156,8 +158,16 @@
 
     {#if showPrompt}
       <section class="pflow-insp__section">
-        <h3 class="pflow-insp__section-title">Prompt</h3>
-        <p class="pflow-insp__help">The instruction this step runs. Write <code>{`{{in:name}}`}</code> or <code>{`{{out:name}}`}</code> to add input/output ports; they appear as knobs on the card and colour here.</p>
+        <div class="pflow-insp__section-head">
+          <h3 class="pflow-insp__section-title">Prompt</h3>
+          <button
+            class="pflow-insp__detect"
+            type="button"
+            title={"Scan the prompt and wrap existing port names as {{in:}}/{{out:}} tokens"}
+            onclick={() => onDetectPorts(node!.id)}
+          >Detect ports</button>
+        </div>
+        <p class="pflow-insp__help">The instruction this step runs. Write <code>{`{{in:name}}`}</code> or <code>{`{{out:name}}`}</code> (add <code>:json</code> or <code>:table</code> for structured data) to declare ports; they appear as knobs on the card and colour here.</p>
         <PromptField
           value={node.data.prompt ?? ""}
           onInput={(next) => onPrompt(node!.id, next)}
@@ -264,6 +274,31 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-muted);
+  }
+  /* A section title with a trailing action button (e.g. Prompt + Detect ports). */
+  .pflow-insp__section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-2-2);
+    margin-bottom: var(--size-2-2);
+  }
+  .pflow-insp__section-head .pflow-insp__section-title {
+    margin: 0;
+  }
+  .pflow-insp__detect {
+    flex: none;
+    padding: var(--size-2-1) var(--size-2-3);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+  }
+  .pflow-insp__detect:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
   }
   .pflow-insp__help {
     margin: 0 0 var(--size-2-3) 0;

@@ -187,6 +187,55 @@ export function derivePortsFromPrompt(
   return { inputs, outputs };
 }
 
+/** The token type suffix for a port's schema type (inverse of
+ *  portSchemaTypeForToken): object→json, array→table, else string (no suffix). */
+function tokenSuffixForSchema(type: string): string {
+  if (type === "object") return ":json";
+  if (type === "array") return ":table";
+  return "";
+}
+
+/** Detect-ports: for each of the node's CURRENT ports whose name appears in the
+ *  prompt and is NOT already tokenised, wrap the first plain occurrence as the
+ *  matching {{in:name(:type)?}} / {{out:name(:type)?}} token. Deterministic
+ *  stand-in for a future LLM pass. Immutable. (Word-boundary match so `note`
+ *  doesn't match inside `notepad`.) */
+export function applyDetectPorts(doc: PflowDocument, nodeId: string): PflowDocument {
+  const node = doc.nodes.find((n) => n.id === nodeId);
+  if (!node) return doc;
+  let prompt = node.prompt ?? "";
+  const already = parsePromptTokens(prompt);
+
+  const wrap = (ports: Port[], dir: "in" | "out") => {
+    const taken = new Set((dir === "in" ? already.inputs : already.outputs).map((t) => t.name));
+    for (const p of ports) {
+      if (taken.has(p.name)) continue; // already tokenised
+      const suffix = tokenSuffixForSchema(p.schema.type);
+      const token = `{{${dir}:${p.name}${suffix}}}`;
+      // Replace the first whole-word occurrence. Names already tokenised are
+      // skipped via `taken` above, so we needn't avoid the braces here: a name
+      // inside `{{in:name}}` is only reached when that name is NOT yet a token,
+      // which can't be the case for the same spelling. Distinct in/out names
+      // that collide are handled by processing inputs before outputs.
+      const re = new RegExp(`\\b${escapeForRegExp(p.name)}\\b`);
+      if (re.test(prompt)) {
+        prompt = prompt.replace(re, token);
+        taken.add(p.name);
+      }
+    }
+  };
+  wrap(node.inputs, "in");
+  wrap(node.outputs, "out");
+
+  if (prompt === (node.prompt ?? "")) return doc; // nothing detected
+  return applyPromptAndDerivePorts(doc, nodeId, prompt);
+}
+
+/** Escape a string for literal use inside a RegExp. */
+function escapeForRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** Set a node's prompt AND re-derive its ports from the new prompt. Immutable. */
 export function applyPromptAndDerivePorts(doc: PflowDocument, nodeId: string, prompt: string): PflowDocument {
   return {

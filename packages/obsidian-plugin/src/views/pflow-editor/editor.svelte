@@ -9,6 +9,7 @@
     toFlowEdges,
     applyNodePosition,
     applyPromptAndDerivePorts,
+    applyDetectPorts,
     applyAddWire,
     applyAddNode,
     applyDeleteNode,
@@ -108,6 +109,11 @@
     // Dropped-but-wired ports survive as orphans (dashed wires).
     commit(applyPromptAndDerivePorts(doc, nodeId, prompt));
   }
+  function onDetectPorts(nodeId: string) {
+    // Deterministic stand-in for a future LLM pass: wrap existing port names
+    // found in the prompt as {{in:}}/{{out:}} tokens.
+    commit(applyDetectPorts(doc, nodeId));
+  }
   function onConnect(c: { source: string; sourceHandle: string; target: string; targetHandle: string }) {
     commit(
       applyAddWire(
@@ -206,6 +212,7 @@
       {onKindChange}
       {onWorkflowMeta}
       {onArgDefault}
+      {onDetectPorts}
     />
   </div>
 </div>

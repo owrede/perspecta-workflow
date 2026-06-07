@@ -1,5 +1,6 @@
 import { MarkerType } from "@xyflow/system";
-import { NODE_KINDS, parsePromptTokens, STRUCTURAL_PORT_IDS } from "@perspecta/core";
+import { NODE_KINDS, parsePromptTokens, STRUCTURAL_PORT_IDS, portSchemaTypeForToken } from "@perspecta/core";
+import type { TokenPort } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 
 export interface FlowNodeData {
@@ -114,16 +115,26 @@ export function derivePortsFromPrompt(
   node: { id: string; kind: NodeKind; prompt?: string; inputs: Port[]; outputs: Port[] },
   wires: Wire[],
 ): { inputs: Port[]; outputs: Port[] } {
-  const { inputs: inNames, outputs: outNames } = parsePromptTokens(node.prompt ?? "");
+  const { inputs: inToks, outputs: outToks } = parsePromptTokens(node.prompt ?? "");
   const structural = STRUCTURAL_PORT_IDS[node.kind];
-  const tokenInput = (name: string): Port => ({ id: `in:${name}`, name, schema: { type: "any" }, required: false });
-  const tokenOutput = (name: string): Port => ({ id: `out:${name}`, name, schema: { type: "any" } });
+  // A token's declared type becomes the port's schema.type (string/object/array).
+  const tokenInput = (t: TokenPort): Port => ({
+    id: `in:${t.name}`,
+    name: t.name,
+    schema: { type: portSchemaTypeForToken(t.type) },
+    required: false,
+  });
+  const tokenOutput = (t: TokenPort): Port => ({
+    id: `out:${t.name}`,
+    name: t.name,
+    schema: { type: portSchemaTypeForToken(t.type) },
+  });
   const wiredInIds = new Set(wires.filter((w) => w.to.nodeId === node.id).map((w) => w.to.portId));
   const wiredOutIds = new Set(wires.filter((w) => w.from.nodeId === node.id).map((w) => w.from.portId));
 
   function build(
-    names: string[],
-    make: (n: string) => Port,
+    toks: TokenPort[],
+    make: (t: TokenPort) => Port,
     current: Port[],
     structuralIds: string[],
     wiredIds: Set<string>,
@@ -139,8 +150,8 @@ export function derivePortsFromPrompt(
       }
     }
     // 2) token ports
-    for (const n of names) {
-      const p = make(n);
+    for (const t of toks) {
+      const p = make(t);
       if (seen.has(p.id)) continue;
       out.push(p);
       seen.add(p.id);
@@ -156,8 +167,8 @@ export function derivePortsFromPrompt(
     return out;
   }
 
-  let inputs = build(inNames, tokenInput, node.inputs, structural.inputs, wiredInIds);
-  let outputs = build(outNames, tokenOutput, node.outputs, structural.outputs, wiredOutIds);
+  let inputs = build(inToks, tokenInput, node.inputs, structural.inputs, wiredInIds);
+  let outputs = build(outToks, tokenOutput, node.outputs, structural.outputs, wiredOutIds);
 
   // agent fallback: nothing derived and nothing wired -> single default in/out
   if (node.kind === "agent" && inputs.length === 0 && outputs.length === 0) {

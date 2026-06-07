@@ -275,6 +275,13 @@ describe("derivePortsFromPrompt", () => {
     expect(r.inputs.map((p) => p.id).sort()).toEqual(["in", "in:extra"].sort());
     expect(r.outputs.map((p) => p.id)).toContain("out");
   });
+  it("carries the token's declared type onto the port schema", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:data:json}} {{out:rows:table}} {{in:plain}}", inputs: [], outputs: [] };
+    const r = derivePortsFromPrompt(node, []);
+    expect(r.inputs.find((p) => p.id === "in:data")?.schema.type).toBe("object");
+    expect(r.inputs.find((p) => p.id === "in:plain")?.schema.type).toBe("string");
+    expect(r.outputs.find((p) => p.id === "out:rows")?.schema.type).toBe("array");
+  });
   it("a wired port dropped by an edited prompt becomes an orphan", () => {
     const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:topic}}", inputs: [{ id: "in:notes", name: "notes", schema: { type: "any" as const } }], outputs: [] };
     const wires = [{ from: { nodeId: "up", portId: "o" }, to: { nodeId: "ag", portId: "in:notes" } }];

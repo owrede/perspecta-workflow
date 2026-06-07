@@ -31,8 +31,20 @@
 
   // An orphan-backed wire is "inactive": render it dashed and muted, and drop
   // the arrowhead — it no longer carries live dataflow (the port it touches is
-  // an orphan left by an edited prompt).
-  let inactive = $derived(Boolean((data as { inactive?: boolean } | undefined)?.inactive));
+  // an orphan left by an edited prompt). A "typeMismatch" wire connects ports of
+  // different types: render it red (a non-blocking lint). The two can co-occur;
+  // mismatch colour wins, dashed-ness from inactive stacks on top.
+  let edgeData = $derived(data as { inactive?: boolean; typeMismatch?: boolean } | undefined);
+  let inactive = $derived(Boolean(edgeData?.inactive));
+  let typeMismatch = $derived(Boolean(edgeData?.typeMismatch));
+
+  let edgeStyle = $derived.by(() => {
+    const parts: string[] = [];
+    if (inactive) parts.push("stroke-dasharray: 6 4", "opacity: 0.7");
+    if (typeMismatch) parts.push("stroke: var(--color-red, #e05252)");
+    else if (inactive) parts.push("stroke: var(--text-faint)");
+    return parts.join("; ");
+  });
 
   // Minimum horizontal lead-out/lead-in off each handle, in flow units.
   const STICK = 40;
@@ -61,5 +73,5 @@
   {id}
   {path}
   markerEnd={inactive ? undefined : markerEnd}
-  style={inactive ? "stroke-dasharray: 6 4; stroke: var(--text-faint); opacity: 0.7;" : ""}
+  style={edgeStyle}
 />

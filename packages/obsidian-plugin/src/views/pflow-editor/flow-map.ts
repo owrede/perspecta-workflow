@@ -40,8 +40,9 @@ export interface FlowEdge {
   /** Arrowhead at the target end to show flow direction (sized up for visibility). */
   markerEnd: { type: MarkerType; width: number; height: number };
   /** Edge render data. `inactive` (dashed) when either endpoint port is an
-   *  orphan — the wire is kept but no longer backed by a live port. */
-  data: { inactive: boolean };
+   *  orphan. `typeMismatch` (red) when the source out-port type differs from the
+   *  target in-port type — a non-blocking lint. */
+  data: { inactive: boolean; typeMismatch: boolean };
 }
 
 /** Deterministic fallback position for a node without a saved position:
@@ -66,25 +67,32 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
 }
 
 export function toFlowEdges(doc: PflowDocument): FlowEdge[] {
-  const isOrphan = (nodeId: string, portId: string, side: "in" | "out"): boolean => {
+  const portOf = (nodeId: string, portId: string, side: "in" | "out"): Port | undefined => {
     const n = doc.nodes.find((x) => x.id === nodeId);
-    if (!n) return false;
-    const ports = side === "in" ? n.inputs : n.outputs;
-    return ports.find((p) => p.id === portId)?.orphan === true;
+    if (!n) return undefined;
+    return (side === "in" ? n.inputs : n.outputs).find((p) => p.id === portId);
   };
-  return doc.wires.map((w) => ({
-    id: `${w.from.nodeId}:${w.from.portId}->${w.to.nodeId}:${w.to.portId}`,
-    type: "pflow" as const,
-    source: w.from.nodeId,
-    target: w.to.nodeId,
-    sourceHandle: w.from.portId,
-    targetHandle: w.to.portId,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 24, height: 24 },
-    data: {
-      inactive:
-        isOrphan(w.from.nodeId, w.from.portId, "out") || isOrphan(w.to.nodeId, w.to.portId, "in"),
-    },
-  }));
+  return doc.wires.map((w) => {
+    const fromPort = portOf(w.from.nodeId, w.from.portId, "out");
+    const toPort = portOf(w.to.nodeId, w.to.portId, "in");
+    // Type mismatch: both ports resolve and their schema types differ. (A missing
+    // port can't be a type clash — it's an orphan, handled by `inactive`.)
+    const typeMismatch =
+      !!fromPort && !!toPort && fromPort.schema.type !== toPort.schema.type;
+    return {
+      id: `${w.from.nodeId}:${w.from.portId}->${w.to.nodeId}:${w.to.portId}`,
+      type: "pflow" as const,
+      source: w.from.nodeId,
+      target: w.to.nodeId,
+      sourceHandle: w.from.portId,
+      targetHandle: w.to.portId,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 24, height: 24 },
+      data: {
+        inactive: fromPort?.orphan === true || toPort?.orphan === true,
+        typeMismatch,
+      },
+    };
+  });
 }
 
 /** Return a new document with `nodeId`'s saved position upserted. Immutable. */

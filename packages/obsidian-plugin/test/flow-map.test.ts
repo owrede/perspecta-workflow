@@ -74,6 +74,25 @@ describe("toFlowEdges orphan/inactive flag", () => {
   });
 });
 
+describe("toFlowEdges type-mismatch flag", () => {
+  // in.o (string) -> ag.i : make ag.i a json port so the types differ.
+  const mismatch: PflowDocument = {
+    ...DOC,
+    nodes: DOC.nodes.map((n) =>
+      n.id === "ag"
+        ? { ...n, inputs: [{ id: "i", name: "topic", schema: { type: "object" as const } }] }
+        : n,
+    ),
+  };
+  it("flags an edge whose source/target port types differ", () => {
+    const edge = toFlowEdges(mismatch).find((e) => e.target === "ag")!;
+    expect(edge.data?.typeMismatch).toBe(true);
+  });
+  it("does not flag a matching-type edge", () => {
+    expect(toFlowEdges(DOC)[0].data?.typeMismatch).toBeFalsy();
+  });
+});
+
 describe("applyNodePosition", () => {
   it("upserts a node position in editor.nodePositions without mutating the input", () => {
     const next = applyNodePosition(DOC, "ag", 300, 90);

@@ -49,6 +49,67 @@ lands where the prose put it.
      delimiter, then the generated code parses the result into per-output vars.
    - Missing section on parse → empty string (graceful, debuggable).
 
+## Amendment (2026-06-07) — typed tokens
+
+After Phases 1–5 shipped, the design gained **typed tokens**. This amendment
+supersedes the "all token ports are `{type:"any"}`" line in Out of scope and the
+original grammar; the orphan/dashed-wire/contenteditable decisions are unchanged.
+
+### Typed token grammar (suffix form)
+
+`{{in:NAME}}` / `{{out:NAME}}` → type **string** (default; unchanged behaviour).
+`{{in:NAME:TYPE}}` / `{{out:NAME:TYPE}}` → typed, where `TYPE ∈ {string, json,
+table}`. `NAME = [A-Za-z_][A-Za-z0-9_-]*`; `TYPE` is a fixed keyword. No
+whitespace inside the braces. `parsePromptTokens` returns, per direction, a list
+of `{ name, type }` (type defaults to `"string"`). De-duplicated by name; if the
+same name appears with two types, the FIRST occurrence's type wins (and a future
+validation may flag the conflict — out of scope here).
+
+### Type vocabulary — exactly three
+
+Rationale: to the LLM every value is text, so filename/path/note-name
+distinctions evaporate (all strings, resolved by prose + tools, not codegen).
+The only axis that changes generated code is flat-vs-structured serialization.
+
+- **string** — bare `${value}` interpolation (today).
+- **json** — in-port: `${JSON.stringify(value, null, 2)}`. out-port: the agent
+  is instructed to emit valid JSON for that output.
+- **table** — in-port: the value is rendered as a Markdown table before
+  interpolation (a small deterministic renderer in the generated code; falls back
+  to JSON if the value isn't tabular). out-port: the agent is instructed to emit
+  a Markdown table.
+
+The port's `schema.type` reflects the token type: string → `{type:"string"}`,
+json → `{type:"object"}` (structured), table → `{type:"array"}` (rows). (These
+are the closest existing PortSchema shapes; exactness isn't load-bearing — the
+token TYPE keyword, carried on the port, drives codegen, not the schema.)
+
+### Type-mismatch wires (red, non-blocking)
+
+When an `out` port of type T1 is wired into an `in` port of type T2 and T1 ≠ T2,
+the connector renders **red** (a third edge state beside normal and
+dashed-orphan). The wire is allowed and codegen still runs — a lint, matching the
+dashed-orphan precedent. `toFlowEdges` gains a `typeMismatch` flag on `data`
+alongside `inactive`; `PflowEdge` renders red when set. `string`↔`string` and
+exact-type matches are clean; any structured/flat or json/table cross is a
+mismatch.
+
+### Detect-ports button (inspector)
+
+A deterministic stand-in for a future LLM pass (no API key wired). For each of the
+node's CURRENT ports, if the port name appears anywhere in the prompt text and is
+not already tokenised, wrap that occurrence as the matching token (using the
+port's type to pick the suffix). Triggered by a button in the inspector's Prompt
+section. The LLM-backed semantic detection is explicitly deferred.
+
+### Migration fixtures
+
+The 3 faithful fixtures are re-authored to embed typed tokens matching their
+ports; goldens are regenerated; correctness is proven by RUNNING the generated
+workflows (this supersedes the earlier "keep byte-identical" intent, which the
+typed-inline direction made obsolete — inline replacement necessarily changes the
+generated text).
+
 ## Scope & files
 
 Phased. Each phase is independently testable.
@@ -152,6 +213,9 @@ grammar unambiguous while typing). De-duplicated by name, first-occurrence order
 ## Out of scope
 
 - Token autocomplete / validation UI beyond colouring.
-- Typed ports from tokens (all token ports are `{ type: "any" }`).
+- ~~Typed ports from tokens~~ — NOW IN SCOPE via the 2026-06-07 amendment
+  (string/json/table). The richer type taxonomy (path, note-name, filename)
+  remains out of scope: those are all strings to the LLM and would only drive
+  wiring validation, not codegen.
 - Tokens in non-prompt fields (workflow description, config bodies).
 - Whitespace-tolerant or namespaced token grammar.

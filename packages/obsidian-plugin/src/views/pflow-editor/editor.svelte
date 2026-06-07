@@ -33,7 +33,16 @@
     file,
     app,
     onChange,
-  }: { file: PflowDocument; app: App; onChange: (next: PflowDocument) => void } = $props();
+    onExport,
+  }: {
+    file: PflowDocument;
+    app: App;
+    onChange: (next: PflowDocument) => void;
+    // Export the CURRENT document to a Claude Code workflow file. Resolves to the
+    // written path, or rejects with the validation/codegen error message. The
+    // view supplies this (it owns vault access); the inspector renders the button.
+    onExport: (doc: PflowDocument) => Promise<string>;
+  } = $props();
 
   let doc = $state<PflowDocument>(file);
   let selectedId = $state<string | null>(null);
@@ -196,6 +205,11 @@
   function onArgDefault(key: string, value: string) {
     commit(applyArgDefault(doc, key, value));
   }
+  // Export the live document (not the stale `file` prop) so the button reflects
+  // unsaved edits. Delegates the actual write to the view via onExport.
+  function onExportCurrent(): Promise<string> {
+    return onExport(doc);
+  }
 </script>
 
 <div class="pflow-editor" class:pflow-editor--dragging={draggingDivider}>
@@ -238,6 +252,7 @@
       {onRemovePort}
       {onPortType}
       {onPortRename}
+      onExport={onExportCurrent}
     />
   </div>
 </div>

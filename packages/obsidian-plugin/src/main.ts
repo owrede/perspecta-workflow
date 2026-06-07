@@ -1,5 +1,5 @@
 import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidian";
-import { VERSION, isWorkflowCanvas, generateClaudeCodeWorkflow, type NodeType, type PflowDocument } from "@perspecta/core";
+import { VERSION, isWorkflowCanvas, type NodeType, type PflowDocument } from "@perspecta/core";
 import { PERSPECTA_UI_VERSION, PerspectaSettingsStore, CornerBadge } from "perspecta-ui";
 import { WorkflowSkillSyncService } from "./skills/WorkflowSkillSyncService.js";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
@@ -11,6 +11,7 @@ import { ColorWatcher } from "./live/colorWatcher.js";
 import { attachNodeMenu } from "./live/nodeMenu.js";
 import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
+import { exportClaudeCodeWorkflowFile } from "./commands/exportWorkflow.js";
 import { PflowEditorView, VIEW_TYPE_PFLOW } from "./views/pflow-editor/view.js";
 
 interface NoteFileRef { id: string; file: string; }
@@ -95,19 +96,11 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   /** Compile the given pflow document to a native Claude Code workflow and
-   *  write it to `.claude/workflows/<name>.js`. */
+   *  write it to `.claude/workflows/<name>.js`. Shared with the editor's
+   *  inspector Export button via exportClaudeCodeWorkflowFile. */
   private async exportClaudeCodeWorkflow(doc: PflowDocument): Promise<void> {
     try {
-      const code = generateClaudeCodeWorkflow(doc);
-      const dir = ".claude/workflows";
-      if (!(await this.app.vault.adapter.exists(".claude"))) {
-        await this.app.vault.adapter.mkdir(".claude");
-      }
-      if (!(await this.app.vault.adapter.exists(dir))) {
-        await this.app.vault.adapter.mkdir(dir);
-      }
-      const path = `${dir}/${doc.workflow.name}.js`;
-      await this.app.vault.adapter.write(path, code);
+      const path = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, doc);
       new Notice(`Perspecta Workflow: exported ${path}`);
     } catch (e) {
       new Notice(`Perspecta Workflow: export failed — ${(e as Error).message}`);

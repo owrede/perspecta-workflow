@@ -46,6 +46,7 @@
     onRemovePort,
     onPortType,
     onPortRename,
+    onExport,
   }: {
     node: { id: string; data: FlowNodeData } | null;
     workflow: { name: string; description: string };
@@ -60,7 +61,27 @@
     onRemovePort: (nodeId: string, dir: "in" | "out", portId: string) => void;
     onPortType: (nodeId: string, dir: "in" | "out", name: string, type: TokenType) => void;
     onPortRename: (nodeId: string, dir: "in" | "out", oldName: string, newName: string) => void;
+    // Export the workflow to a Claude Code dynamic workflow file. Resolves to the
+    // written vault-relative path, or rejects with the validation/codegen error.
+    onExport: () => Promise<string>;
   } = $props();
+
+  // Export-button state (Mode B only): idle → busy → ok/err, with the result
+  // message shown inline so the user sees WHERE it was written or WHY it failed.
+  let exportState = $state<"idle" | "busy" | "ok" | "err">("idle");
+  let exportMsg = $state("");
+  async function runExport() {
+    exportState = "busy";
+    exportMsg = "";
+    try {
+      const path = await onExport();
+      exportState = "ok";
+      exportMsg = path;
+    } catch (e) {
+      exportState = "err";
+      exportMsg = (e as Error).message;
+    }
+  }
 
   // A unique default name for a newly added port (in1, in2, …).
   function nextPortName(existing: { name: string }[], dir: "in" | "out"): string {
@@ -135,6 +156,28 @@
         <input class="pflow-insp__input" type="text" value={argDefaults.on_exists}
           oninput={(e) => onArgDefault("on_exists", (e.currentTarget as HTMLInputElement).value)} />
       </label>
+    </section>
+
+    <section class="pflow-insp__section">
+      <h3 class="pflow-insp__section-title">Export</h3>
+      <p class="pflow-insp__help">
+        Compile this workflow to a Claude Code dynamic workflow at
+        <code>.claude/workflows/{workflow.name || "&lt;name&gt;"}.js</code>, callable
+        with the workflow command.
+      </p>
+      <button
+        type="button"
+        class="pflow-insp__export-btn"
+        disabled={exportState === "busy"}
+        onclick={runExport}
+      >
+        {exportState === "busy" ? "Exporting…" : "Export to Claude Code"}
+      </button>
+      {#if exportState === "ok"}
+        <p class="pflow-insp__export-msg pflow-insp__export-msg--ok">Wrote <code>{exportMsg}</code></p>
+      {:else if exportState === "err"}
+        <p class="pflow-insp__export-msg pflow-insp__export-msg--err">{exportMsg}</p>
+      {/if}
     </section>
   {:else}
     <!-- ── Mode A: node selected ── -->
@@ -380,6 +423,37 @@
     color: var(--text-accent);
     font-size: 0.95em;
   }
+  /* Export CTA: accent-filled call-to-action button, full width of the section. */
+  .pflow-insp__export-btn {
+    width: 100%;
+    padding: var(--size-2-2) var(--size-2-3);
+    font-size: var(--font-ui-small);
+    font-weight: 500;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+    border: none;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+  }
+  .pflow-insp__export-btn:hover:not(:disabled) {
+    background: var(--interactive-accent-hover);
+  }
+  .pflow-insp__export-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .pflow-insp__export-msg {
+    margin: var(--size-2-3) 0 0 0;
+    font-size: var(--font-ui-smaller);
+    line-height: 1.45;
+    word-break: break-all;
+  }
+  .pflow-insp__export-msg code {
+    font-family: var(--font-monospace);
+    font-size: 0.95em;
+  }
+  .pflow-insp__export-msg--ok { color: var(--text-success, var(--text-muted)); }
+  .pflow-insp__export-msg--err { color: var(--text-error, var(--text-muted)); }
   .pflow-insp__empty {
     margin: 0;
     color: var(--text-faint);

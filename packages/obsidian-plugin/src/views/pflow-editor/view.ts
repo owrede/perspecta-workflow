@@ -2,6 +2,7 @@ import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { parsePflow, type PflowDocument } from "@perspecta/core";
 import { dedupeDuplicateNamedPorts } from "./flow-map.js";
+import { exportClaudeCodeWorkflowFile } from "../../commands/exportWorkflow.js";
 import Editor from "./editor.svelte";
 
 export const VIEW_TYPE_PFLOW = "perspecta-pflow-editor";
@@ -76,6 +77,11 @@ export class PflowEditorView extends TextFileView {
           this.current = next;
           this.requestSave();
         },
+        // The inspector's Export button calls this with the live document. We own
+        // vault access, so we do the write here and return the path (or let the
+        // codegen error propagate so the inspector can show it).
+        onExport: (doc: PflowDocument) =>
+          exportClaudeCodeWorkflowFile(this.app.vault.adapter, doc),
       },
     });
   }

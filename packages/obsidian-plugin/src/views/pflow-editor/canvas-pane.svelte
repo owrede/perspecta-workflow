@@ -117,11 +117,18 @@
     const live = new Map(nodes.map((n) => [n.id, n] as const));
     nodes = next.map((n) => {
       const prev = live.get(n.id);
-      // Keep xyflow's live position (drag), selection, and measured size; only
-      // adopt the new content fields from `next`.
-      return prev
+      if (!prev) return n;
+      // Always keep xyflow's live position (drag) and selection — they're
+      // unrelated to handle geometry. But only carry `measured` forward when
+      // the node's PORTS are unchanged: a port rename/add/remove changes which
+      // handle ids exist, and xyflow re-registers a node's handle bounds only
+      // when it re-measures. Reusing stale `measured` keeps the OLD handle ids
+      // registered, so a renamed/added handle renders but can't be dragged.
+      // Dropping `measured` on a port change forces a re-measure → fresh handles.
+      const portsSame = portsKey(prev.data as never) === portsKey(n.data as never);
+      return portsSame
         ? { ...n, position: prev.position, selected: prev.selected, measured: prev.measured }
-        : n;
+        : { ...n, position: prev.position, selected: prev.selected };
     });
   });
   $effect(() => {
@@ -158,27 +165,41 @@
   // Drop-on-card: when a connection drag is RELEASED, xyflow fires onconnectend
   // with the final state. If it landed on a handle, `toHandle` is set and
   // `onconnect` already fired — we do nothing here. If it landed on a card body
-  // (no handle) but over a node, `toHandle` is null while `toNode` holds that
-  // node. In that case we ask upward to create a matching opposite-direction
-  // port on the target and wire it. `fromHandle` carries the drag origin's
-  // node, port id, and type ('source' = from an output, 'target' = from an input).
+  // (no handle), `toHandle` is null AND (in this xyflow version) `toNode` is
+  // ALSO null — xyflow only fills toNode from a hit handle. So we hit-test the
+  // DOM at the release pointer ourselves: walk up from the element under the
+  // pointer to the nearest `.svelte-flow__node[data-id]` and use that node id.
+  // `fromHandle` carries the drag origin's node, port id, and type ('source' =
+  // from an output, 'target' = from an input).
+  function nodeIdAtPointer(event: MouseEvent | TouchEvent): string | null {
+    const pt =
+      "changedTouches" in event && event.changedTouches.length > 0
+        ? event.changedTouches[0]
+        : (event as MouseEvent);
+    const x = (pt as { clientX?: number }).clientX;
+    const y = (pt as { clientY?: number }).clientY;
+    if (typeof x !== "number" || typeof y !== "number") return null;
+    const el = document.elementFromPoint(x, y) as Element | null;
+    const nodeEl = el?.closest(".svelte-flow__node");
+    return nodeEl?.getAttribute("data-id") ?? null;
+  }
   function handleConnectEnd(
-    _event: MouseEvent | TouchEvent,
+    event: MouseEvent | TouchEvent,
     state: {
       fromHandle: { nodeId: string; id?: string | null; type: "source" | "target" } | null;
       toHandle: { nodeId: string; id?: string | null } | null;
-      toNode: { id: string } | null;
     },
   ) {
     if (state.toHandle) return; // landed on a real port — onconnect handled it
     const from = state.fromHandle;
-    const target = state.toNode;
-    if (!from || !from.id || !target) return; // released on empty canvas
+    if (!from || !from.id) return;
+    const toNodeId = nodeIdAtPointer(event);
+    if (!toNodeId) return; // released on empty canvas
     onDropConnect({
       fromNodeId: from.nodeId,
       fromPortId: from.id,
       fromType: from.type,
-      toNodeId: target.id,
+      toNodeId,
     });
   }
 

@@ -388,6 +388,72 @@ describe("dedupeDuplicateNamedPorts", () => {
   });
 });
 
+import {
+  isPortTokenLocked,
+  applyAddPort,
+  applyRemovePort,
+  applyPortType,
+  applyPortRename,
+} from "../src/views/pflow-editor/flow-map.js";
+
+describe("port editor helpers", () => {
+  const agentDoc = (prompt: string, inputs: any[] = [], outputs: any[] = []): PflowDocument => ({
+    ...DOC,
+    nodes: [{ id: "ag", kind: "agent", label: "A", prompt, inputs, outputs }],
+    wires: [],
+  });
+
+  it("isPortTokenLocked: true when a matching token exists in the prompt", () => {
+    const n = { prompt: "Use {{in:topic}}." };
+    expect(isPortTokenLocked(n, { id: "in:topic", name: "topic", schema: { type: "string" } }, "in")).toBe(true);
+  });
+  it("isPortTokenLocked: false for an inspector-only port", () => {
+    const n = { prompt: "plain" };
+    expect(isPortTokenLocked(n, { id: "in:extra", name: "extra", schema: { type: "string" } }, "in")).toBe(false);
+  });
+
+  it("applyAddPort adds an inspector-only port without writing a token", () => {
+    const next = applyAddPort(agentDoc("Some prompt."), "ag", "in", "extra", "string");
+    const ag = next.nodes.find((n) => n.id === "ag")!;
+    expect(ag.inputs.some((p) => p.name === "extra")).toBe(true);
+    expect(ag.prompt).not.toContain("{{in:extra}}");
+  });
+  it("applyAddPort respects the type (json -> object schema)", () => {
+    const next = applyAddPort(agentDoc("p"), "ag", "out", "rows", "table");
+    const p = next.nodes.find((n) => n.id === "ag")!.outputs.find((x) => x.name === "rows")!;
+    expect(p.schema.type).toBe("array");
+  });
+
+  it("applyRemovePort removes an inspector-only port", () => {
+    const doc = agentDoc("p", [], [{ id: "out:extra", name: "extra", schema: { type: "string" } }]);
+    const next = applyRemovePort(doc, "ag", "out", "out:extra");
+    expect(next.nodes.find((n) => n.id === "ag")!.outputs).toHaveLength(0);
+  });
+  it("applyRemovePort refuses a token-locked port (no-op)", () => {
+    const doc = agentDoc("Use {{in:topic}}.", [{ id: "in:topic", name: "topic", schema: { type: "string" } }]);
+    const next = applyRemovePort(doc, "ag", "in", "in:topic");
+    expect(next.nodes.find((n) => n.id === "ag")!.inputs).toHaveLength(1);
+  });
+
+  it("applyPortType on a token-backed port rewrites the token suffix", () => {
+    const doc = agentDoc("Use {{in:topic}}.", [{ id: "in:topic", name: "topic", schema: { type: "string" } }]);
+    const next = applyPortType(doc, "ag", "in", "topic", "json");
+    expect(next.nodes.find((n) => n.id === "ag")!.prompt).toContain("{{in:topic:json}}");
+  });
+  it("applyPortType on a token-backed json port back to string drops the suffix", () => {
+    const doc = agentDoc("Use {{in:topic:json}}.", [{ id: "in:topic", name: "topic", schema: { type: "object" } }]);
+    const next = applyPortType(doc, "ag", "in", "topic", "string");
+    expect(next.nodes.find((n) => n.id === "ag")!.prompt).toContain("{{in:topic}}");
+    expect(next.nodes.find((n) => n.id === "ag")!.prompt).not.toContain("{{in:topic:json}}");
+  });
+
+  it("applyPortRename on a token-backed port rewrites the token name", () => {
+    const doc = agentDoc("Use {{in:topic}}.", [{ id: "in:topic", name: "topic", schema: { type: "string" } }]);
+    const next = applyPortRename(doc, "ag", "in", "topic", "subject");
+    expect(next.nodes.find((n) => n.id === "ag")!.prompt).toContain("{{in:subject}}");
+  });
+});
+
 describe("applyDetectPorts", () => {
   const node = {
     id: "ag",

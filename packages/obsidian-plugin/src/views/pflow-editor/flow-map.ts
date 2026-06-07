@@ -1,6 +1,6 @@
 import { MarkerType } from "@xyflow/system";
 import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken } from "@perspecta/core";
-import type { TokenPort } from "@perspecta/core";
+import type { TokenPort, TokenType } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 
 export interface FlowNodeData {
@@ -285,6 +285,154 @@ export function applyPromptAndDerivePorts(doc: PflowDocument, nodeId: string, pr
       return { ...withPrompt, inputs, outputs };
     }),
   };
+}
+
+// ── Port editor helpers ─────────────────────────────────────────────────────
+// The inspector port editor and the prompt tokens are two views of the same
+// ports. A port is "token-locked" when the prompt declares a matching token —
+// then it can't be removed in the inspector, and type/name edits rewrite the
+// token so the two never disagree. An inspector-only (token-less) port is freely
+// editable/removable until its token appears.
+
+type PortDir = "in" | "out";
+
+/** Token type suffix for a token type ("" for string). */
+function suffixForType(type: TokenType): string {
+  return type === "string" ? "" : `:${type}`;
+}
+
+/** Map a PortSchema type back to the token type keyword. */
+function tokenTypeForSchema(type: string): TokenType {
+  if (type === "object") return "json";
+  if (type === "array") return "table";
+  return "string";
+}
+
+/** Replace every `{{dir:oldName(:anytype)?}}` occurrence in `prompt` with a
+ *  token spelled `{{dir:newName(:newType)?}}`. Used to keep the prompt in sync
+ *  when a token-backed port is renamed or retyped. */
+function rewriteToken(prompt: string, dir: PortDir, oldName: string, newName: string, newType: TokenType): string {
+  // Match the name with an optional :type suffix (string|json|table).
+  const re = new RegExp(`\\{\\{${dir}:${escapeForRegExp(oldName)}(?::(?:string|json|table))?\\}\\}`, "g");
+  return prompt.replace(re, `{{${dir}:${newName}${suffixForType(newType)}}}`);
+}
+
+/** True when the node's prompt declares a token whose name matches `port`. */
+export function isPortTokenLocked(node: { prompt?: string }, port: Port, dir: PortDir): boolean {
+  const toks = parsePromptTokens(node.prompt ?? "");
+  return (dir === "in" ? toks.inputs : toks.outputs).some((t) => t.name === port.name);
+}
+
+/** Add an inspector-only port (no token written) of `dir` named `name` with the
+ *  given token type. No-op for input-kind inputs / output-kind outputs, and when
+ *  a port of that name already exists on the side. Immutable. */
+export function applyAddPort(
+  doc: PflowDocument,
+  nodeId: string,
+  dir: PortDir,
+  name: string,
+  type: TokenType,
+): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+      if (dir === "in" && n.kind === "input") return n;
+      if (dir === "out" && n.kind === "output") return n;
+      const list = dir === "in" ? n.inputs : n.outputs;
+      if (list.some((p) => p.name === name)) return n;
+      const port: Port = {
+        id: `${dir}:${name}`,
+        name,
+        schema: { type: portSchemaTypeForToken(type) },
+        ...(dir === "in" ? { required: false } : {}),
+      };
+      return dir === "in" ? { ...n, inputs: [...n.inputs, port] } : { ...n, outputs: [...n.outputs, port] };
+    }),
+  };
+}
+
+/** Remove a port by id — UNLESS it is token-locked (then no-op; the UI hides the
+ *  control, this is the safety net). Drops wires on the removed port. Immutable. */
+export function applyRemovePort(doc: PflowDocument, nodeId: string, dir: PortDir, portId: string): PflowDocument {
+  const node = doc.nodes.find((n) => n.id === nodeId);
+  if (!node) return doc;
+  const list = dir === "in" ? node.inputs : node.outputs;
+  const port = list.find((p) => p.id === portId);
+  if (!port) return doc;
+  if (isPortTokenLocked(node, port, dir)) return doc; // token-locked: not removable
+  const nodes = doc.nodes.map((n) =>
+    n.id === nodeId
+      ? dir === "in"
+        ? { ...n, inputs: n.inputs.filter((p) => p.id !== portId) }
+        : { ...n, outputs: n.outputs.filter((p) => p.id !== portId) }
+      : n,
+  );
+  const wires = doc.wires.filter((w) =>
+    dir === "in"
+      ? !(w.to.nodeId === nodeId && w.to.portId === portId)
+      : !(w.from.nodeId === nodeId && w.from.portId === portId),
+  );
+  return { ...doc, nodes, wires };
+}
+
+/** Change a port's type. Updates schema.type; if the port is token-backed,
+ *  rewrites the token's suffix in the prompt so the two agree. Immutable. */
+export function applyPortType(
+  doc: PflowDocument,
+  nodeId: string,
+  dir: PortDir,
+  name: string,
+  type: TokenType,
+): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+      const apply = (ports: Port[]) =>
+        ports.map((p) => (p.name === name ? { ...p, schema: { type: portSchemaTypeForToken(type) } } : p));
+      const locked = isPortTokenLocked(n, { id: `${dir}:${name}`, name, schema: { type: "any" } }, dir);
+      const prompt = locked ? rewriteToken(n.prompt ?? "", dir, name, name, type) : n.prompt;
+      return dir === "in"
+        ? { ...n, inputs: apply(n.inputs), prompt }
+        : { ...n, outputs: apply(n.outputs), prompt };
+    }),
+  };
+}
+
+/** Rename a port. Updates name + id; re-points wires; if token-backed, rewrites
+ *  the token name in the prompt (preserving its type). Immutable. */
+export function applyPortRename(
+  doc: PflowDocument,
+  nodeId: string,
+  dir: PortDir,
+  oldName: string,
+  newName: string,
+): PflowDocument {
+  const node = doc.nodes.find((n) => n.id === nodeId);
+  if (!node) return doc;
+  const list = dir === "in" ? node.inputs : node.outputs;
+  const port = list.find((p) => p.name === oldName);
+  if (!port) return doc;
+  const oldId = port.id;
+  const newId = `${dir}:${newName}`;
+  const type = tokenTypeForSchema(port.schema.type);
+  const locked = isPortTokenLocked(node, port, dir);
+  const nodes = doc.nodes.map((n) => {
+    if (n.id !== nodeId) return n;
+    const apply = (ports: Port[]) =>
+      ports.map((p) => (p.id === oldId ? { ...p, id: newId, name: newName } : p));
+    const prompt = locked ? rewriteToken(n.prompt ?? "", dir, oldName, newName, type) : n.prompt;
+    return dir === "in"
+      ? { ...n, inputs: apply(n.inputs), prompt }
+      : { ...n, outputs: apply(n.outputs), prompt };
+  });
+  const wires = doc.wires.map((w) => {
+    if (dir === "in" && w.to.nodeId === nodeId && w.to.portId === oldId) return { ...w, to: { ...w.to, portId: newId } };
+    if (dir === "out" && w.from.nodeId === nodeId && w.from.portId === oldId) return { ...w, from: { ...w.from, portId: newId } };
+    return w;
+  });
+  return { ...doc, nodes, wires };
 }
 
 /** Return a new document with `nodeId`'s prompt set. Immutable. */

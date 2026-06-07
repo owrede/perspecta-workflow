@@ -288,6 +288,23 @@ describe("derivePortsFromPrompt", () => {
     expect(r.inputs.map((p) => p.id)).toEqual(["in"]);
     expect(r.outputs.map((p) => p.id)).toEqual(["out"]);
   });
+  it("agent: only an in-token -> keeps the DEFAULT output (out)", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "Use {{in:topic}}.", inputs: [], outputs: [] };
+    const r = derivePortsFromPrompt(node, []);
+    expect(r.inputs.map((p) => p.id)).toEqual(["in:topic"]);
+    expect(r.outputs.map((p) => p.id)).toEqual(["out"]); // default output fallback
+  });
+  it("agent: only an out-token -> keeps the DEFAULT input (in)", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "Produce {{out:draft}}.", inputs: [], outputs: [] };
+    const r = derivePortsFromPrompt(node, []);
+    expect(r.inputs.map((p) => p.id)).toEqual(["in"]); // default input fallback
+    expect(r.outputs.map((p) => p.id)).toEqual(["out:draft"]);
+  });
+  it("agent: an out-token replaces the default output", () => {
+    const node = { id: "ag", kind: "agent" as const, label: "A", prompt: "{{in:topic}} -> {{out:draft}}", inputs: [], outputs: [] };
+    const r = derivePortsFromPrompt(node, []);
+    expect(r.outputs.map((p) => p.id)).toEqual(["out:draft"]); // no default `out`
+  });
   it("structural kind: tokens ADD, structural port preserved", () => {
     const loop = { id: "lp", kind: "loop" as const, label: "L", prompt: "{{in:extra}}", inputs: [{ id: "in", name: "draft", schema: { type: "any" as const }, required: true }], outputs: [{ id: "out", name: "fix", schema: { type: "any" as const } }] };
     const r = derivePortsFromPrompt(loop, []);

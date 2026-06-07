@@ -183,11 +183,16 @@ export function derivePortsFromPrompt(
   let inputs = build(inToks, tokenInput, node.inputs, structural.inputs, wiredInIds);
   let outputs = build(outToks, tokenOutput, node.outputs, structural.outputs, wiredOutIds);
 
-  // agent fallback: nothing derived and nothing wired -> single default in/out
-  if (node.kind === "agent" && inputs.length === 0 && outputs.length === 0) {
+  // agent fallback — applied INDEPENDENTLY per side: an agent with no {{in:}}
+  // token (and no wired input) keeps the default `in`; an agent with no {{out:}}
+  // token (and no wired output) keeps the default `out`. As soon as ANY token of
+  // that direction appears, the default is replaced by the named token port(s).
+  // (input/output kinds are sink/source-only, so they are NOT given the missing
+  // side — only `agent`.)
+  if (node.kind === "agent") {
     const def = defaultPortsForKind("agent");
-    inputs = def.inputs;
-    outputs = def.outputs;
+    if (inputs.length === 0) inputs = def.inputs;
+    if (outputs.length === 0) outputs = def.outputs;
   }
   return { inputs, outputs };
 }

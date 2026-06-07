@@ -30,21 +30,21 @@
       "id": "corpus",
       "kind": "agent",
       "label": "Read corpus state",
-      "prompt": "Read the NEWEST update note in work_root (the highest `0X …` number — determine it live, do not hard-code). It sets the increment boundary. Extract: corpus_state_raw (the raw `korpus-stand` range string, verbatim), increment_from (the END date of that range — the new increment's lower bound, exclusive), last_run (the `zuletzt-gelaufen` of `_src/prompts/natebjones-delta-update.md`; if it differs from increment_from, use the LATER of the two), last_update_note (filename of the newest note), next_update_number (newest + 1). Also verify today's date from <env> (never the knowledge cutoff) — the increment's upper bound. Return all of these as the corpus state.",
-      "inputs": [{ "id": "requested_period", "name": "requested_period", "schema": { "type": "string" } }],
-      "outputs": [{ "id": "corpus_state", "name": "corpus_state", "schema": { "type": "string" } }],
+      "prompt": "Read the NEWEST update note in work_root (the highest `0X …` number — determine it live, do not hard-code). It sets the increment boundary. Extract: corpus_state_raw (the raw `korpus-stand` range string, verbatim), increment_from (the END date of that range — the new increment's lower bound, exclusive), last_run (the `zuletzt-gelaufen` of `_src/prompts/natebjones-delta-update.md`; if it differs from increment_from, use the LATER of the two), last_update_note (filename of the newest note), next_update_number (newest + 1). Also verify today's date from <env> (never the knowledge cutoff) — the increment's upper bound. Consider the {{in:requested_period}} if one was given. Return all of these as the {{out:corpus_state}}.",
+      "inputs": [{ "id": "in:requested_period", "name": "requested_period", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:corpus_state", "name": "corpus_state", "schema": { "type": "string" } }],
       "phase": "Read"
     },
     {
       "id": "scope",
       "kind": "agent",
       "label": "Confirm scope",
-      "prompt": "Clarify scope with the user ONLY if requested_period is empty. Ask (AskUserQuestion) three things: period (default: from increment_from / the later of increment_from and last_run, to today), sources (default: Substack + YouTube), substack login path (default: Playwright with the existing session). If requested_period was set, derive period_from/period_to from it and take defaults for the rest without asking. Return period_from, period_to, sources, and login_path.",
+      "prompt": "Clarify scope with the user ONLY if {{in:requested_period}} is empty. Ask (AskUserQuestion) three things: period (default: from increment_from / the later of increment_from and last_run, to today), sources (default: Substack + YouTube), substack login path (default: Playwright with the existing session). Use the corpus state for the boundaries:\n\n{{in:corpus_state}}\n\nIf requested_period was set, derive period_from/period_to from it and take defaults for the rest without asking. Return period_from, period_to, sources, and login_path as the {{out:scope}}.",
       "inputs": [
-        { "id": "requested_period", "name": "requested_period", "schema": { "type": "string" } },
-        { "id": "corpus_state", "name": "corpus_state", "schema": { "type": "string" }, "required": true }
+        { "id": "in:requested_period", "name": "requested_period", "schema": { "type": "string" } },
+        { "id": "in:corpus_state", "name": "corpus_state", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "scope", "name": "scope", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:scope", "name": "scope", "schema": { "type": "string" } }],
       "phase": "Scope"
     },
     {
@@ -64,69 +64,69 @@
       "id": "ss-fetch",
       "kind": "agent",
       "label": "Substack fetch",
-      "prompt": "Fetch the Substack corpus — only NEW posts since increment_from (within the clarified period). Load the archive (substack_archive); after browser_navigate wait briefly then browser_evaluate WITHOUT clicks (the page re-navigates on interaction). Filter to Nate's own posts (a[href*=\"natesnewsletter.substack.com/p/\"]). Pull reliable dates from the footer 'recent posts' block of an opened post (format `MMM DD • NATE`), NOT the archive DOM (which has audio lengths like '46:36' that misparse as dates). For each new post pull the full text via `div.available-content`. Collect each post as { url, slug, title, date, body, paywalled_flag }.",
-      "inputs": [{ "id": "session_ready", "name": "session_ready", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "substack_posts", "name": "substack_posts", "schema": { "type": "string" } }],
+      "prompt": "Fetch the Substack corpus — only NEW posts since increment_from (within the clarified period). Proceed only once the session is ready:\n\n{{in:session_ready}}\n\nLoad the archive (substack_archive); after browser_navigate wait briefly then browser_evaluate WITHOUT clicks (the page re-navigates on interaction). Filter to Nate's own posts (a[href*=\"natesnewsletter.substack.com/p/\"]). Pull reliable dates from the footer 'recent posts' block of an opened post (format `MMM DD • NATE`), NOT the archive DOM (which has audio lengths like '46:36' that misparse as dates). For each new post pull the full text via `div.available-content`. Collect each post as { url, slug, title, date, body, paywalled_flag } and return them as the {{out:substack_posts}}.",
+      "inputs": [{ "id": "in:session_ready", "name": "session_ready", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:substack_posts", "name": "substack_posts", "schema": { "type": "string" } }],
       "phase": "Substack"
     },
     {
       "id": "ss-classify",
       "kind": "agent",
       "label": "Substack classify",
-      "prompt": "Classify each post as full text or teaser (the paywall heuristic): full-text posts are ~15k–32k chars; Executive-Briefing teasers are ~2.5k–4.5k chars and end with 'Executive Circle members enjoy…' (the non-active AI Executive Circle tier). Set an `access` field per post: `full` (complete) or `teaser` (mark as [PAYWALL-TEASER]; the body may later be filled from the matching YouTube transcript). Return the posts with the access field. If all new posts are teasers or there are none, that is valid — the run continues with YouTube.",
-      "inputs": [{ "id": "substack_posts", "name": "substack_posts", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "substack_posts_classified", "name": "substack_posts_classified", "schema": { "type": "string" } }],
+      "prompt": "Classify each post as full text or teaser (the paywall heuristic), given the fetched posts:\n\n{{in:substack_posts}}\n\nFull-text posts are ~15k–32k chars; Executive-Briefing teasers are ~2.5k–4.5k chars and end with 'Executive Circle members enjoy…' (the non-active AI Executive Circle tier). Set an `access` field per post: `full` (complete) or `teaser` (mark as [PAYWALL-TEASER]; the body may later be filled from the matching YouTube transcript). Return the posts with the access field as the {{out:substack_posts_classified}}. If all new posts are teasers or there are none, that is valid — the run continues with YouTube.",
+      "inputs": [{ "id": "in:substack_posts", "name": "substack_posts", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:substack_posts_classified", "name": "substack_posts_classified", "schema": { "type": "string" } }],
       "phase": "Substack"
     },
     {
       "id": "ss-inbox",
       "kind": "agent",
       "label": "Substack inbox",
-      "prompt": "Write each classified post as its OWN raw file into inbox_folder, format EXACTLY like the existing `_inbox/` files (frontmatter quelle/titel/autor/datum/zugriff/abgerufen/tags, then `# title` and body). Append ` — NUR TEASER, Volltext im AI Executive Circle Tier` to `zugriff` when access is teaser, and mark a teaser body as [PAYWALL-TEASER]. Collect the written paths — these are the provenance anchors the update note will wikilink, so filenames must match exactly. Return the substack_inbox_files paths.",
-      "inputs": [{ "id": "substack_posts_classified", "name": "substack_posts_classified", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "substack_inbox_files", "name": "substack_inbox_files", "schema": { "type": "string" } }],
+      "prompt": "Write each classified post as its OWN raw file into inbox_folder, given:\n\n{{in:substack_posts_classified}}\n\nFormat EXACTLY like the existing `_inbox/` files (frontmatter quelle/titel/autor/datum/zugriff/abgerufen/tags, then `# title` and body). Append ` — NUR TEASER, Volltext im AI Executive Circle Tier` to `zugriff` when access is teaser, and mark a teaser body as [PAYWALL-TEASER]. Collect the written paths — these are the provenance anchors the update note will wikilink, so filenames must match exactly. Return the {{out:substack_inbox_files}} paths.",
+      "inputs": [{ "id": "in:substack_posts_classified", "name": "substack_posts_classified", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:substack_inbox_files", "name": "substack_inbox_files", "schema": { "type": "string" } }],
       "phase": "Substack"
     },
     {
       "id": "yt-fetch",
       "kind": "agent",
       "label": "YouTube fetch",
-      "prompt": "Fetch the YouTube corpus — BINDING USER RULE: always base each evaluation on the VIDEO TRANSCRIPT, not just the description. Open youtube_channel (dismiss the DE consent wall with 'Alle ablehnen' if shown). Read the video list from ytInitialData (richGridRenderer → lockupViewModel: contentId, title, metadata rows). The English original title is in videoDetails.title of the watch page. Keep only new videos vs increment_from. Get each transcript via the DOM panel (the timedtext API returns empty for ASR captions): open the watch page, click the transcript button, wait ~2s, read the EXPANDED engagement-panel text (filtering search-box, timestamps `^\\d+:\\d+$`, and `N Sekunden/Minuten` markers). Collect each as { id, title_en, date, views, transcript }.",
-      "inputs": [{ "id": "session_ready", "name": "session_ready", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "youtube_videos", "name": "youtube_videos", "schema": { "type": "string" } }],
+      "prompt": "Fetch the YouTube corpus — BINDING USER RULE: always base each evaluation on the VIDEO TRANSCRIPT, not just the description. Proceed only once the session is ready:\n\n{{in:session_ready}}\n\nOpen youtube_channel (dismiss the DE consent wall with 'Alle ablehnen' if shown). Read the video list from ytInitialData (richGridRenderer → lockupViewModel: contentId, title, metadata rows). The English original title is in videoDetails.title of the watch page. Keep only new videos vs increment_from. Get each transcript via the DOM panel (the timedtext API returns empty for ASR captions): open the watch page, click the transcript button, wait ~2s, read the EXPANDED engagement-panel text (filtering search-box, timestamps `^\\d+:\\d+$`, and `N Sekunden/Minuten` markers). Collect each as { id, title_en, date, views, transcript } and return them as the {{out:youtube_videos}}.",
+      "inputs": [{ "id": "in:session_ready", "name": "session_ready", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:youtube_videos", "name": "youtube_videos", "schema": { "type": "string" } }],
       "phase": "YouTube"
     },
     {
       "id": "yt-map",
       "kind": "agent",
       "label": "YouTube map",
-      "prompt": "Map each video to one of three categories by comparing with the Substack posts: post-pendant (a video version of a same-named post → 1:1 pair in video_post_map), standalone (no post pendant → extra content from the transcript), or paywall-filler (a video whose post is access: teaser → its transcript fills the missing full text). This three-way split steers the next step: pendants and standalones go into the collected YouTube inbox file; paywall-filler transcripts are additionally appended to the matching teaser inbox file. Return video_post_map, standalone_videos, and paywall_fillers.",
+      "prompt": "Map each video to one of three categories by comparing the fetched videos:\n\n{{in:youtube_videos}}\n\nwith the classified Substack posts:\n\n{{in:substack_posts_classified}}\n\nThe three categories: post-pendant (a video version of a same-named post → 1:1 pair in video_post_map), standalone (no post pendant → extra content from the transcript), or paywall-filler (a video whose post is access: teaser → its transcript fills the missing full text). This three-way split steers the next step: pendants and standalones go into the collected YouTube inbox file; paywall-filler transcripts are additionally appended to the matching teaser inbox file. Return video_post_map, standalone_videos, and paywall_fillers as the {{out:youtube_mapping}}.",
       "inputs": [
-        { "id": "youtube_videos", "name": "youtube_videos", "schema": { "type": "string" }, "required": true },
-        { "id": "substack_posts_classified", "name": "substack_posts_classified", "schema": { "type": "string" }, "required": true }
+        { "id": "in:youtube_videos", "name": "youtube_videos", "schema": { "type": "string" }, "required": true },
+        { "id": "in:substack_posts_classified", "name": "substack_posts_classified", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "youtube_mapping", "name": "youtube_mapping", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:youtube_mapping", "name": "youtube_mapping", "schema": { "type": "string" } }],
       "phase": "YouTube"
     },
     {
       "id": "yt-inbox",
       "kind": "agent",
       "label": "YouTube inbox",
-      "prompt": "Save the YouTube findings as ONE collected inbox file plus targeted appends. Write `YYYY-MM-DD–DD YouTube-Korpus ….md` into inbox_folder containing: the video↔post mapping table, standalone extra content, and the paywall-fill list. Frontmatter like the Substack inbox files; quelle = channel URL. Additionally append paywall-filling video transcripts to the matching teaser inbox file in substack_inbox_files (under a `## Volltext aus YouTube-Transkript` heading) so the teaser counts as filled — this requires the Substack inbox files to already exist (that is why this step is wired after Substack inbox). Return youtube_inbox_file.",
+      "prompt": "Save the YouTube findings as ONE collected inbox file plus targeted appends, given the mapping:\n\n{{in:youtube_mapping}}\n\nWrite `YYYY-MM-DD–DD YouTube-Korpus ….md` into inbox_folder containing: the video↔post mapping table, standalone extra content, and the paywall-fill list. Frontmatter like the Substack inbox files; quelle = channel URL. Additionally append paywall-filling video transcripts to the matching teaser inbox file in the Substack inbox files:\n\n{{in:substack_inbox_files}}\n\n(under a `## Volltext aus YouTube-Transkript` heading) so the teaser counts as filled — this requires the Substack inbox files to already exist (that is why this step is wired after Substack inbox). Return the {{out:youtube_inbox_file}}.",
       "inputs": [
-        { "id": "youtube_mapping", "name": "youtube_mapping", "schema": { "type": "string" }, "required": true },
-        { "id": "substack_inbox_files", "name": "substack_inbox_files", "schema": { "type": "string" }, "required": true }
+        { "id": "in:youtube_mapping", "name": "youtube_mapping", "schema": { "type": "string" }, "required": true },
+        { "id": "in:substack_inbox_files", "name": "substack_inbox_files", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "youtube_inbox_file", "name": "youtube_inbox_file", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:youtube_inbox_file", "name": "youtube_inbox_file", "schema": { "type": "string" } }],
       "phase": "YouTube"
     },
     {
       "id": "existing",
       "kind": "agent",
       "label": "Read existing set",
-      "prompt": "Read the FULL existing set so numbering continues without gaps. From `01 Mindset-Axiome.md` (plus the additions in the update notes): all axioms A1…An — note the highest number. From `06 Beratungs-Frameworks.md` plus the framework registers of the update notes: all frameworks F1…Fn — note the highest number. From the newest update note: the open research gaps / observation points (some mature into axioms over runs). Return axioms, frameworks, and gap_notes — the reference every new contribution is checked against.",
-      "inputs": [{ "id": "corpus_state", "name": "corpus_state", "schema": { "type": "string" }, "required": true }],
-      "outputs": [{ "id": "existing_set", "name": "existing_set", "schema": { "type": "string" } }],
+      "prompt": "Read the FULL existing set so numbering continues without gaps, scoped by the corpus state:\n\n{{in:corpus_state}}\n\nFrom `01 Mindset-Axiome.md` (plus the additions in the update notes): all axioms A1…An — note the highest number. From `06 Beratungs-Frameworks.md` plus the framework registers of the update notes: all frameworks F1…Fn — note the highest number. From the newest update note: the open research gaps / observation points (some mature into axioms over runs). Return axioms, frameworks, and gap_notes as the {{out:existing_set}} — the reference every new contribution is checked against.",
+      "inputs": [{ "id": "in:corpus_state", "name": "corpus_state", "schema": { "type": "string" }, "required": true }],
+      "outputs": [{ "id": "out:existing_set", "name": "existing_set", "schema": { "type": "string" } }],
       "phase": "Existing"
     },
     {
@@ -146,23 +146,23 @@
       "id": "format",
       "kind": "agent",
       "label": "Format update",
-      "prompt": "Render the new update note in the style of `09 / 10 / 11 Update … — Delta-Auswertung`. Set update_filename to `{{next_update_number}} Update {{today}} — Delta-Auswertung.md`. Advance the increment boundary: set the new `korpus-stand` to `\"{{increment_from}} bis {{today}}\"` — the range THIS run covered (never a single date, or the next run loses its start bound). Fill the template (frontmatter with tags/status/erstellt/parent/korpus-stand/zugriffsstand/quelle-roh; an intro blockquote citing the previous note and corpus state; then sections: TL;DR delta, Neuzugänge table, Thematische Bögen, Neue Axiome, Verfeinerungen, Neue Frameworks, Wirkungstabelle, Forschungslücken, Quellen). Output ONLY the rendered note as the formatted body.",
+      "prompt": "Render the new update note in the style of `09 / 10 / 11 Update … — Delta-Auswertung`, using the corpus state:\n\n{{in:corpus_state}}\n\nand the delta analysis:\n\n{{in:delta}}\n\nSet update_filename to `{{next_update_number}} Update {{today}} — Delta-Auswertung.md`. Advance the increment boundary: set the new `korpus-stand` to `\"{{increment_from}} bis {{today}}\"` — the range THIS run covered (never a single date, or the next run loses its start bound). Fill the template (frontmatter with tags/status/erstellt/parent/korpus-stand/zugriffsstand/quelle-roh; an intro blockquote citing the previous note and corpus state; then sections: TL;DR delta, Neuzugänge table, Thematische Bögen, Neue Axiome, Verfeinerungen, Neue Frameworks, Wirkungstabelle, Forschungslücken, Quellen). Output ONLY the rendered note as the {{out:formatted}} body.",
       "inputs": [
-        { "id": "corpus_state", "name": "corpus_state", "schema": { "type": "string" }, "required": true },
-        { "id": "delta", "name": "delta", "schema": { "type": "string" }, "required": true }
+        { "id": "in:corpus_state", "name": "corpus_state", "schema": { "type": "string" }, "required": true },
+        { "id": "in:delta", "name": "delta", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "formatted", "name": "formatted", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:formatted", "name": "formatted", "schema": { "type": "string" } }],
       "phase": "Format"
     },
     {
       "id": "save",
       "kind": "agent",
       "label": "Save update",
-      "prompt": "Save the rendered update note via write_note. Write the formatted body to work_root, named by update_filename (`{{next_update_number}} Update {{today}} — Delta-Auswertung.md`). Honour on_exists if the target exists. Return the final written path as saved_path.",
+      "prompt": "Save the rendered update note via write_note. Write the formatted body:\n\n{{in:formatted}}\n\nto work_root, named by update_filename (`{{next_update_number}} Update {{today}} — Delta-Auswertung.md`). Honour on_exists if the target exists. Return the final written path as the {{out:saved_path}}.",
       "inputs": [
-        { "id": "formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
+        { "id": "in:formatted", "name": "formatted", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "saved_path", "name": "saved_path", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:saved_path", "name": "saved_path", "schema": { "type": "string" } }],
       "phase": "Save"
     },
     {
@@ -183,56 +183,56 @@
       "id": "cleanup",
       "kind": "agent",
       "label": "Cleanup",
-      "prompt": "Finish & hygiene. MANDATORY increment markers (or the next run evaluates wrong): set `zuletzt-gelaufen` in `_src/prompts/natebjones-delta-update.md` to today (the next default run reads it as the 'since last run' lower bound); consistency-check that `zuletzt-gelaufen` (= today) matches the end date of the new `korpus-stand` — both should point to the same state. Hygiene: delete all scratch files (`post-*.txt`, `yt-*.txt`, temp scripts) in the vault root (do NOT touch `.playwright-mcp/`); verify the update note's wikilinks match the real `_inbox/` filenames exactly; if Substack/YouTube DOM selectors changed, fix them in the template AND in the fetch steps of this workflow. Return cleanup_done = ok.",
+      "prompt": "Finish & hygiene, once propagation is done:\n\n{{in:impact_done}}\n\nMANDATORY increment markers (or the next run evaluates wrong): set `zuletzt-gelaufen` in `_src/prompts/natebjones-delta-update.md` to today (the next default run reads it as the 'since last run' lower bound); consistency-check that `zuletzt-gelaufen` (= today) matches the end date of the new `korpus-stand` — both should point to the same state. Hygiene: delete all scratch files (`post-*.txt`, `yt-*.txt`, temp scripts) in the vault root (do NOT touch `.playwright-mcp/`); verify the update note (at {{in:saved_path}}) has wikilinks matching the real `_inbox/` filenames exactly; if Substack/YouTube DOM selectors changed, fix them in the template AND in the fetch steps of this workflow. Return the {{out:cleanup_done}} = ok.",
       "inputs": [
-        { "id": "impact_done", "name": "impact_done", "schema": { "type": "string" }, "required": true },
-        { "id": "saved_path", "name": "saved_path", "schema": { "type": "string" }, "required": true }
+        { "id": "in:impact_done", "name": "impact_done", "schema": { "type": "string" }, "required": true },
+        { "id": "in:saved_path", "name": "saved_path", "schema": { "type": "string" }, "required": true }
       ],
-      "outputs": [{ "id": "cleanup_done", "name": "cleanup_done", "schema": { "type": "string" } }],
+      "outputs": [{ "id": "out:cleanup_done", "name": "cleanup_done", "schema": { "type": "string" } }],
       "phase": "Cleanup"
     },
     {
       "id": "end",
       "kind": "output",
       "label": "Done",
-      "inputs": [{ "id": "cleanup_done", "name": "cleanup_done", "schema": { "type": "string" }, "required": true }],
+      "inputs": [{ "id": "in", "name": "cleanup_done", "schema": { "type": "string" }, "required": true }],
       "outputs": [],
       "phase": "Done"
     }
   ],
   "wires": [
-    { "from": { "nodeId": "in", "portId": "requested_period" }, "to": { "nodeId": "corpus", "portId": "requested_period" } },
-    { "from": { "nodeId": "in", "portId": "requested_period" }, "to": { "nodeId": "scope", "portId": "requested_period" } },
-    { "from": { "nodeId": "corpus", "portId": "corpus_state" }, "to": { "nodeId": "scope", "portId": "corpus_state" } },
-    { "from": { "nodeId": "scope", "portId": "scope" }, "to": { "nodeId": "precond", "portId": "scope" } },
+    { "from": { "nodeId": "in", "portId": "requested_period" }, "to": { "nodeId": "corpus", "portId": "in:requested_period" } },
+    { "from": { "nodeId": "in", "portId": "requested_period" }, "to": { "nodeId": "scope", "portId": "in:requested_period" } },
+    { "from": { "nodeId": "corpus", "portId": "out:corpus_state" }, "to": { "nodeId": "scope", "portId": "in:corpus_state" } },
+    { "from": { "nodeId": "scope", "portId": "out:scope" }, "to": { "nodeId": "precond", "portId": "scope" } },
     { "from": { "nodeId": "precond", "portId": "session_ready" }, "to": { "nodeId": "precond", "portId": "retry" } },
 
-    { "from": { "nodeId": "precond", "portId": "session_ready" }, "to": { "nodeId": "ss-fetch", "portId": "session_ready" } },
-    { "from": { "nodeId": "ss-fetch", "portId": "substack_posts" }, "to": { "nodeId": "ss-classify", "portId": "substack_posts" } },
-    { "from": { "nodeId": "ss-classify", "portId": "substack_posts_classified" }, "to": { "nodeId": "ss-inbox", "portId": "substack_posts_classified" } },
+    { "from": { "nodeId": "precond", "portId": "session_ready" }, "to": { "nodeId": "ss-fetch", "portId": "in:session_ready" } },
+    { "from": { "nodeId": "ss-fetch", "portId": "out:substack_posts" }, "to": { "nodeId": "ss-classify", "portId": "in:substack_posts" } },
+    { "from": { "nodeId": "ss-classify", "portId": "out:substack_posts_classified" }, "to": { "nodeId": "ss-inbox", "portId": "in:substack_posts_classified" } },
 
-    { "from": { "nodeId": "precond", "portId": "session_ready" }, "to": { "nodeId": "yt-fetch", "portId": "session_ready" } },
-    { "from": { "nodeId": "yt-fetch", "portId": "youtube_videos" }, "to": { "nodeId": "yt-map", "portId": "youtube_videos" } },
-    { "from": { "nodeId": "ss-classify", "portId": "substack_posts_classified" }, "to": { "nodeId": "yt-map", "portId": "substack_posts_classified" } },
-    { "from": { "nodeId": "yt-map", "portId": "youtube_mapping" }, "to": { "nodeId": "yt-inbox", "portId": "youtube_mapping" } },
-    { "from": { "nodeId": "ss-inbox", "portId": "substack_inbox_files" }, "to": { "nodeId": "yt-inbox", "portId": "substack_inbox_files" } },
+    { "from": { "nodeId": "precond", "portId": "session_ready" }, "to": { "nodeId": "yt-fetch", "portId": "in:session_ready" } },
+    { "from": { "nodeId": "yt-fetch", "portId": "out:youtube_videos" }, "to": { "nodeId": "yt-map", "portId": "in:youtube_videos" } },
+    { "from": { "nodeId": "ss-classify", "portId": "out:substack_posts_classified" }, "to": { "nodeId": "yt-map", "portId": "in:substack_posts_classified" } },
+    { "from": { "nodeId": "yt-map", "portId": "out:youtube_mapping" }, "to": { "nodeId": "yt-inbox", "portId": "in:youtube_mapping" } },
+    { "from": { "nodeId": "ss-inbox", "portId": "out:substack_inbox_files" }, "to": { "nodeId": "yt-inbox", "portId": "in:substack_inbox_files" } },
 
-    { "from": { "nodeId": "corpus", "portId": "corpus_state" }, "to": { "nodeId": "existing", "portId": "corpus_state" } },
+    { "from": { "nodeId": "corpus", "portId": "out:corpus_state" }, "to": { "nodeId": "existing", "portId": "in:corpus_state" } },
 
-    { "from": { "nodeId": "ss-inbox", "portId": "substack_inbox_files" }, "to": { "nodeId": "delta", "portId": "substack_inbox_files" } },
-    { "from": { "nodeId": "yt-inbox", "portId": "youtube_inbox_file" }, "to": { "nodeId": "delta", "portId": "youtube_inbox_file" } },
-    { "from": { "nodeId": "existing", "portId": "existing_set" }, "to": { "nodeId": "delta", "portId": "existing_set" } },
+    { "from": { "nodeId": "ss-inbox", "portId": "out:substack_inbox_files" }, "to": { "nodeId": "delta", "portId": "substack_inbox_files" } },
+    { "from": { "nodeId": "yt-inbox", "portId": "out:youtube_inbox_file" }, "to": { "nodeId": "delta", "portId": "youtube_inbox_file" } },
+    { "from": { "nodeId": "existing", "portId": "out:existing_set" }, "to": { "nodeId": "delta", "portId": "existing_set" } },
 
-    { "from": { "nodeId": "corpus", "portId": "corpus_state" }, "to": { "nodeId": "format", "portId": "corpus_state" } },
-    { "from": { "nodeId": "delta", "portId": "delta" }, "to": { "nodeId": "format", "portId": "delta" } },
-    { "from": { "nodeId": "format", "portId": "formatted" }, "to": { "nodeId": "save", "portId": "formatted" } },
+    { "from": { "nodeId": "corpus", "portId": "out:corpus_state" }, "to": { "nodeId": "format", "portId": "in:corpus_state" } },
+    { "from": { "nodeId": "delta", "portId": "delta" }, "to": { "nodeId": "format", "portId": "in:delta" } },
+    { "from": { "nodeId": "format", "portId": "out:formatted" }, "to": { "nodeId": "save", "portId": "in:formatted" } },
 
     { "from": { "nodeId": "delta", "portId": "delta" }, "to": { "nodeId": "propagate", "portId": "delta" } },
-    { "from": { "nodeId": "save", "portId": "saved_path" }, "to": { "nodeId": "propagate", "portId": "saved_path" } },
+    { "from": { "nodeId": "save", "portId": "out:saved_path" }, "to": { "nodeId": "propagate", "portId": "saved_path" } },
     { "from": { "nodeId": "propagate", "portId": "impact_done" }, "to": { "nodeId": "propagate", "portId": "retry" } },
 
-    { "from": { "nodeId": "propagate", "portId": "impact_done" }, "to": { "nodeId": "cleanup", "portId": "impact_done" } },
-    { "from": { "nodeId": "save", "portId": "saved_path" }, "to": { "nodeId": "cleanup", "portId": "saved_path" } },
-    { "from": { "nodeId": "cleanup", "portId": "cleanup_done" }, "to": { "nodeId": "end", "portId": "cleanup_done" } }
+    { "from": { "nodeId": "propagate", "portId": "impact_done" }, "to": { "nodeId": "cleanup", "portId": "in:impact_done" } },
+    { "from": { "nodeId": "save", "portId": "out:saved_path" }, "to": { "nodeId": "cleanup", "portId": "in:saved_path" } },
+    { "from": { "nodeId": "cleanup", "portId": "out:cleanup_done" }, "to": { "nodeId": "end", "portId": "in" } }
   ]
 }

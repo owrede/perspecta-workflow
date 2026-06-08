@@ -134,6 +134,11 @@ export function emitBranchRegion(doc: PflowDocument, region: BranchRegion, emitO
   });
 
   const decl = reconverges ? [`  let ${resultVar};`] : [];
+  // EVAL verdict is always logged (like a verify node), so a trace of the
+  // gate decision exists even when neither pass/fail port is wired. Branch
+  // nodes do NOT log here — their choice flows into the dispatch arms and a
+  // bare BRANCH: line carries no standalone meaning.
+  const verdictLog = region.verb === "EVAL" ? [`  log(${choiceVar});`] : [];
   // Hard quality gate (eval blockOnFail): a `fail` verdict throws BEFORE the
   // dispatch arms run, so any nodes wired onto the fail arm are intentionally
   // superseded — a failed gate aborts everything downstream. The EVAL verdict
@@ -141,5 +146,5 @@ export function emitBranchRegion(doc: PflowDocument, region: BranchRegion, emitO
   const gate = region.blockOnFail
     ? [`  if (/${region.verb}:\\s*fail/i.test(String(${choiceVar}))) throw new Error(${jsString(`Quality gate failed: ${branch.label}`)});`]
     : [];
-  return [...decl, `  const ${choiceVar} = ${call};`, ...gate, ...arms, `  }`].join("\n");
+  return [...decl, `  const ${choiceVar} = ${call};`, ...verdictLog, ...gate, ...arms, `  }`].join("\n");
 }

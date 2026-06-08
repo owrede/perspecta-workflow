@@ -37,6 +37,14 @@ describe("codegen — eval node", () => {
     expect(code).not.toContain("BRANCH:");
   });
 
+  it("always logs the verdict so an unwired eval still leaves a trace", () => {
+    const code = generateClaudeCodeWorkflow(evalDoc(false));
+    // The eval node's choice variable is logged right after it is computed,
+    // mirroring a verify node — so the gate decision is traceable even when
+    // neither pass/fail port is wired. Assert a log(<evalVar>) call exists.
+    expect(code).toMatch(/log\([A-Za-z0-9_]+\);/);
+  });
+
   it("omits a block-on-fail throw when blockOnFail is false", () => {
     const code = generateClaudeCodeWorkflow(evalDoc(false));
     expect(code).not.toContain("Quality gate failed");

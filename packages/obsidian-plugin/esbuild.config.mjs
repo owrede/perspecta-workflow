@@ -54,7 +54,7 @@ const ctx = await esbuild.context({
   // the renderer (its ESM loader tries to fetch the bare specifier and fails);
   // must be a static import of the unprefixed name. The SDK stays external
   // because the probe runs it in that spawned Node child, never in the renderer.
-  external: ["obsidian", "electron", "@modelcontextprotocol/sdk", "child_process"],
+  external: ["obsidian", "electron", "@modelcontextprotocol/sdk", "child_process", "fs"],
   outfile: "main.js",
   sourcemap: watch ? "inline" : false,
   logLevel: "info",

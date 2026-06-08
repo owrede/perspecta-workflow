@@ -30,9 +30,10 @@ describe("NodeMcpProbe guards", () => {
 
 describe("NodeMcpProbe child-process protocol", () => {
   // A minimal fake child: emits the given stdout line after stdin closes, then
-  // fires 'close'. Exercises the spawn→parse path without a real process.
-  function fakeSpawn(stdoutLine: string) {
-    return () => {
+  // fires 'close'. Captures the (cmd, args, opts) it was spawned with for assertions.
+  function fakeSpawn(stdoutLine: string, captured?: { cmd?: string; opts?: { env: NodeJS.ProcessEnv } }) {
+    return (cmd: string, _args: string[], opts: { env: NodeJS.ProcessEnv }) => {
+      if (captured) { captured.cmd = cmd; captured.opts = opts; }
       const handlers: Record<string, (arg?: unknown) => void> = {};
       const child = {
         stdout: { on: (ev: string, cb: (d: Buffer) => void) => { if (ev === "data") setTimeout(() => cb(Buffer.from(stdoutLine)), 0); } },
@@ -44,10 +45,28 @@ describe("NodeMcpProbe child-process protocol", () => {
     };
   }
 
+  const stubNode = () => "/stub/bin/node";
+  const stubPath = () => "/stub/bin:/usr/bin";
+
+  it("launches the resolved node with an augmented PATH env", async () => {
+    const cap: { cmd?: string; opts?: { env: NodeJS.ProcessEnv } } = {};
+    const probe = new NodeMcpProbe(
+      "/abs/mcp-probe.mjs",
+      fakeSpawn(JSON.stringify({ ok: true, tools: [] }), cap),
+      stubNode,
+      stubPath,
+    );
+    await probe.probe({ name: "fs", transport: "stdio", command: "x" });
+    expect(cap.cmd).toBe("/stub/bin/node");
+    expect(cap.opts?.env.PATH).toBe("/stub/bin:/usr/bin");
+  });
+
   it("parses tools from the helper's ok:true JSON line", async () => {
     const probe = new NodeMcpProbe(
       "/abs/mcp-probe.mjs",
       fakeSpawn(JSON.stringify({ ok: true, tools: [{ name: "read_file", annotations: { readOnlyHint: true } }] })),
+      stubNode,
+      stubPath,
     );
     const tools = await probe.probe({ name: "fs", transport: "stdio", command: "x" });
     expect(tools).toEqual([{ name: "read_file", description: undefined, annotations: { readOnlyHint: true } }]);
@@ -57,7 +76,19 @@ describe("NodeMcpProbe child-process protocol", () => {
     const probe = new NodeMcpProbe(
       "/abs/mcp-probe.mjs",
       fakeSpawn(JSON.stringify({ ok: false, error: "spawn nope EACCES" })),
+      stubNode,
+      stubPath,
     );
     await expect(probe.probe({ name: "bad", transport: "stdio", command: "nope" })).rejects.toThrow("spawn nope EACCES");
+  });
+
+  it("throws a clear reason when no node binary is found", async () => {
+    const probe = new NodeMcpProbe(
+      "/abs/mcp-probe.mjs",
+      fakeSpawn("{}"),
+      () => null, // resolveNode finds nothing
+      stubPath,
+    );
+    await expect(probe.probe({ name: "x", transport: "stdio", command: "y" })).rejects.toThrow("Could not find a `node` binary");
   });
 });

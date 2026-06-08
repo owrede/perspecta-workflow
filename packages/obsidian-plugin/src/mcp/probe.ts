@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import { classifyToolGroup, type McpRegistryTool, type McpToolAnnotations } from "@perspecta/core";
 import type { McpJsonServer } from "./mcpJson.js";
+import { resolveNodePath, augmentedPath, NO_NODE_REASON } from "./nodeResolver.js";
 
 // `child_process` (unprefixed) is marked external in the plugin build, so esbuild
 // emits a CommonJS `require("child_process")` that Electron's renderer resolves
@@ -53,11 +54,19 @@ interface ProbeCliResult {
  *
  *  @param probeHelperPath absolute path to the bundled mcp-probe.mjs
  *  @param spawnFn injectable spawn (defaults to the statically-imported one)
+ *  @param resolveNode injectable node-path resolver (defaults to resolveNodePath)
+ *  @param buildPath injectable PATH builder (defaults to augmentedPath)
  */
 export class NodeMcpProbe implements McpProbe {
   constructor(
     private readonly probeHelperPath: string,
-    private readonly spawnFn: (cmd: string, args: string[]) => ChildProcessWithoutNullStreams = spawn,
+    private readonly spawnFn: (
+      cmd: string,
+      args: string[],
+      opts: { env: NodeJS.ProcessEnv },
+    ) => ChildProcessWithoutNullStreams = spawn,
+    private readonly resolveNode: () => string | null = () => resolveNodePath(),
+    private readonly buildPath: () => string = () => augmentedPath(),
   ) {}
 
   async probe(server: McpJsonServer): Promise<ProbedTool[]> {
@@ -67,7 +76,14 @@ export class NodeMcpProbe implements McpProbe {
     if (!server.command) {
       throw new Error(`Stdio server "${server.name}" has no command — check .mcp.json`);
     }
-    const child = this.spawnFn("node", [this.probeHelperPath]);
+    // Obsidian launched from the Dock has a minimal PATH (no nvm/Homebrew), so we
+    // (1) resolve an absolute node to launch the helper, and (2) hand the helper
+    // an augmented PATH so the MCP SDK inside it can spawn the TARGET server's
+    // command (npx/uvx/vault-memory/…), which would otherwise ENOENT.
+    const nodePath = this.resolveNode();
+    if (!nodePath) throw new Error(NO_NODE_REASON);
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, PATH: this.buildPath() };
+    const child = this.spawnFn(nodePath, [this.probeHelperPath], { env: childEnv });
     const request = JSON.stringify({ command: server.command, args: server.args ?? [], env: server.env });
 
     const result = await new Promise<ProbeCliResult>((resolve, reject) => {

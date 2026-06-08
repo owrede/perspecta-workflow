@@ -71,6 +71,12 @@ export const KIND_INFO: Record<NodeKind, KindInfo> = {
     title: "Branch",
     description: "Routes to one of several paths based on an LLM decision.",
   },
+  mcp: {
+    icon: "M9 2v6 M15 2v6 M6 8h12v3a6 6 0 0 1-12 0V8Z M12 17v5",
+    color: "var(--color-blue, #3b82f6)",
+    title: "MCP Connector",
+    description: "Reaches an external service (an MCP server) and returns its result.",
+  },
   script: {
     icon: "M16 18l6-6-6-6 M8 6l-6 6 6 6",
     color: "var(--text-faint, #888)",
@@ -90,4 +96,4 @@ export function colorForKind(kind: string): string {
 }
 
 /** Kinds that carry a free-text prompt (so the inspector shows a Prompt field). */
-export const PROMPT_KINDS: NodeKind[] = ["agent", "verify", "synthesize", "loop", "branch"];
+export const PROMPT_KINDS: NodeKind[] = ["agent", "verify", "synthesize", "loop", "branch", "mcp"];

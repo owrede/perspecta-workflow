@@ -88,15 +88,20 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   async probeMcpServer(name: string): Promise<void> {
     const server = (await this.listMcpServers()).find((s) => s.name === name);
     if (!server) return;
+    // Preserve the last good tool list across a probing/failed cycle, so a
+    // transient probe failure doesn't wipe a previously-hot server's tools.
+    const prevTools = this.settings.mcpRegistry[name]?.tools ?? {};
     const reg = { ...this.settings.mcpRegistry };
-    reg[name] = { whitelisted: true, probe: { status: "probing" }, tools: reg[name]?.tools ?? {} };
+    reg[name] = { whitelisted: true, probe: { status: "probing" }, tools: prevTools };
     this.settings.mcpRegistry = reg;
     await this.saveSettings();
+    // Note: concurrent probes of the same server (rare for a manual settings
+    // action) resolve last-writer-wins; no corruption, just a possible flicker.
     try {
       const tools = await new NodeMcpProbe().probe(server);
       reg[name] = { whitelisted: true, probe: { status: "hot", probedAt: new Date().toISOString() }, tools: probedToolsToRegistry(tools) };
     } catch (e) {
-      reg[name] = { whitelisted: true, probe: { status: "failed", error: (e as Error).message }, tools: reg[name]?.tools ?? {} };
+      reg[name] = { whitelisted: true, probe: { status: "failed", error: (e as Error).message }, tools: prevTools };
     }
     this.settings.mcpRegistry = { ...reg };
     await this.saveSettings();

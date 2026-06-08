@@ -121,7 +121,9 @@ describe("codegen — eval comparison mode + reconvergence", () => {
     const code = generateClaudeCodeWorkflow(doc);
     // Strip the ES-module preamble (header comment + `export const meta = {...}`)
     // so the remaining body is a legal async-function body. The meta object ends
-    // with the first `\n}\n` after `export const meta`.
+    // with the first `\n}\n` after `export const meta`. NOTE: this assumes meta is
+    // a FLAT object (no nested `}` on its own line) — true today because `phases`
+    // emits empty. If meta ever nests an object, anchor the strip more defensively.
     const metaStart = code.indexOf("export const meta");
     const metaEnd = code.indexOf("\n}\n", metaStart);
     expect(metaEnd).toBeGreaterThan(metaStart);

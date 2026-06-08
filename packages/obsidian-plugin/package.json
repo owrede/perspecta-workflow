@@ -19,6 +19,7 @@
   "dependencies": {
     "@perspecta/core": "*",
     "perspecta-ui": "file:./vendor/perspecta-ui",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@xyflow/svelte": "1.5.2",
     "svelte": "5.56.2"
   },

@@ -47,7 +47,7 @@ const ctx = await esbuild.context({
   format: "cjs",
   platform: "browser",
   target: "es2022",
-  external: ["obsidian", "electron"],
+  external: ["obsidian", "electron", "@modelcontextprotocol/sdk"],
   outfile: "main.js",
   sourcemap: watch ? "inline" : false,
   logLevel: "info",

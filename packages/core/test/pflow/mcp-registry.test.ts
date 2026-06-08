@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyToolGroup, resolveServerGrants, applyGroupPermission, serverGroupDefaults, DEFAULT_GROUP_DEFAULTS } from "../../src/pflow/mcp-registry.js";
+import { classifyToolGroup, resolveServerGrants, applyGroupPermission, serverGroupDefaults, DEFAULT_GROUP_DEFAULTS, resolveToolPermission } from "../../src/pflow/mcp-registry.js";
 import type { McpRegistryServer } from "../../src/pflow/mcp-registry.js";
 
 describe("classifyToolGroup", () => {
@@ -41,6 +41,23 @@ describe("serverGroupDefaults", () => {
   it("falls back to all-ask for a pre-existing server without the field", () => {
     const legacy = { whitelisted: true, probe: { status: "hot" as const }, tools: {} } as unknown as import("../../src/pflow/mcp-registry.js").McpRegistryServer;
     expect(serverGroupDefaults(legacy)).toEqual(DEFAULT_GROUP_DEFAULTS);
+  });
+});
+
+describe("resolveToolPermission", () => {
+  const s: McpRegistryServer = {
+    whitelisted: true, probe: { status: "hot" },
+    groupDefaults: { read: "allow", interactive: "ask", write: "blocked" },
+    tools: {
+      concrete: { group: "read", groupSource: "heuristic", permission: "ask" },
+      follows:  { group: "read", groupSource: "heuristic", permission: "default" },
+      writish:  { group: "write", groupSource: "heuristic", permission: "default" },
+    },
+  };
+  it("returns a concrete permission as-is", () => { expect(resolveToolPermission(s, "concrete")).toBe("ask"); });
+  it("resolves 'default' to the tool's group default", () => {
+    expect(resolveToolPermission(s, "follows")).toBe("allow");
+    expect(resolveToolPermission(s, "writish")).toBe("blocked");
   });
 });
 

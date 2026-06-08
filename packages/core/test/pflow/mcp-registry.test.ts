@@ -23,8 +23,12 @@ describe("classifyToolGroup", () => {
     expect(classifyToolGroup("frobnicate")).toBe("interactive");
     expect(classifyToolGroup("move_file")).toBe("interactive");
   });
-  it("treats both-hints-false (no decisive verb) as interactive", () => {
-    expect(classifyToolGroup("create_directory", { readOnlyHint: false, destructiveHint: false })).toBe("interactive");
+  it("lets a write verb win even when both hints are false (create_directory is mutating)", () => {
+    expect(classifyToolGroup("create_directory", { readOnlyHint: false, destructiveHint: false })).toBe("write");
+  });
+  it("does not let both-false annotations override a write verb", () => {
+    expect(classifyToolGroup("delete_everything", { readOnlyHint: false, destructiveHint: false })).toBe("write");
+    expect(classifyToolGroup("remove_user", { readOnlyHint: false, destructiveHint: false })).toBe("write");
   });
   it("classifies a write verb with an underscore suffix as write (not read)", () => {
     expect(classifyToolGroup("create_view")).toBe("write");

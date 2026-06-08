@@ -48,11 +48,9 @@ const WRITE_VERBS = /^(create|update|delete|write|set|add|remove|put|post|patch|
 export function classifyToolGroup(name: string, ann?: McpToolAnnotations): McpToolGroup {
   if (ann?.readOnlyHint === true) return "read";
   if (ann?.destructiveHint === true) return "write";
-  // If both hints are explicitly present and both false, no annotation is decisive → interactive.
-  if (ann && "readOnlyHint" in ann && "destructiveHint" in ann) return "interactive";
   if (READ_VERBS.test(name) && !WRITE_VERBS.test(name)) return "read";
   if (WRITE_VERBS.test(name)) return "write";
-  return "interactive"; // unknown → middle bucket
+  return "interactive"; // neither read nor destructive
 }
 
 /** The tool-name sets a server grant resolves to, for codegen + summaries. */

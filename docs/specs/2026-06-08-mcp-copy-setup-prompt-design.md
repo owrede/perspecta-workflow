@@ -93,10 +93,11 @@ A small, pure-where-possible helper that produces the prompt text.
   → C:\Users\...\MyVault\.obsidian\plugins\perspecta-workflow\mcp-server.mjs (Windows)
   ```
 
-  `getFullPath` requires Obsidian ≥ 1.7.2, so `manifest.json` `minAppVersion` is
-  set to `1.7.2`. Using `manifest.dir` (rather than reconstructing from
-  `configDir` + id) keeps the path correct even if Obsidian relocates plugin
-  storage.
+  `minAppVersion` is raised to `1.7.2` as a conservative floor for relying on
+  `getFullPath` on `FileSystemAdapter` (the method predates this, but 1.7.2 is a
+  safe, recent baseline; the plugin is desktop-only regardless). Using
+  `manifest.dir` (rather than reconstructing from `configDir` + id) keeps the
+  path correct even if Obsidian relocates plugin storage.
 
   Because the plugin is desktop-only (decision 5), the adapter is always a
   `FileSystemAdapter` at runtime, so `getBasePath()` is reliably present.

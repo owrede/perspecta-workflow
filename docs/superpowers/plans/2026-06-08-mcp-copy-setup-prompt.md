@@ -4,7 +4,7 @@
 
 **Goal:** Add an Install-tab "Copy setup prompt" button that copies a natural-language prompt to register the bundled perspecta-workflow MCP server in a coding agent's `.mcp.json`.
 
-**Architecture:** A new esbuild build bundles the mcp-server into a self-contained `mcp-server.mjs` inside the plugin folder. A pure helper builds the natural-language prompt from an absolute server path. The Install-tab UI resolves that path via `FileSystemAdapter.getBasePath()` + `manifest.dir`, guards against a missing artifact, and copies the prompt. The manifest is flipped to `isDesktopOnly: true`.
+**Architecture:** A new esbuild build bundles the mcp-server into a self-contained `mcp-server.mjs` inside the plugin folder. A pure helper builds the natural-language prompt from an absolute server path. The Install-tab UI resolves that path via `FileSystemAdapter.getFullPath(manifest.dir + "/" + artifact)` (OS-native separators on every platform), guards against a missing artifact, and copies the prompt. The manifest is flipped to `isDesktopOnly: true` with `minAppVersion` 1.7.2.
 
 **Tech Stack:** TypeScript, esbuild, Obsidian plugin API, Vitest.
 

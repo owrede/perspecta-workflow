@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -160,7 +162,25 @@ export function buildServer(): McpServer {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/** True when this module is the process entry point (spawned as `node server.js`
+ *  / `node mcp-server.mjs`), false when imported (e.g. by tests). Compares real
+ *  filesystem paths, not raw strings: `import.meta.url` percent-encodes spaces
+ *  and resolves symlinks, while `process.argv[1]` does neither — a naive
+ *  `file://${argv[1]}` comparison silently fails for any vault path containing a
+ *  space or reached via a symlink (iCloud/Dropbox-synced vaults), leaving the
+ *  spawned server connected to nothing. realpathSync on both sides normalizes
+ *  encoding and symlinks so the guard holds for real-world paths. */
+function isProcessEntry(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
+
+if (isProcessEntry()) {
   const server = buildServer();
   await server.connect(new StdioServerTransport());
 }

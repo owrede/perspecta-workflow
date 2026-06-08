@@ -350,6 +350,7 @@ function emitNode(doc: PflowDocument, node: PflowNode, overrides?: Map<string, s
     case "join":
     case "loop":
     case "branch":
+    case "eval":
       // These are control-flow REGION entries/members: they are emitted by the
       // region pass in generateClaudeCodeWorkflow, not node-by-node. If emitNode
       // is reached for one of these directly (i.e. it was not recognized as a

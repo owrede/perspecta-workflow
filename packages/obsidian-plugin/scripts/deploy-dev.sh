@@ -26,7 +26,7 @@ fi
 mkdir -p "$DEST"
 
 count=0
-for f in main.js manifest.json styles.css versions.json preload.js mcp-server.mjs; do
+for f in main.js manifest.json styles.css versions.json preload.js mcp-server.mjs mcp-probe.mjs; do
   if [[ -f "$ROOT/$f" ]]; then
     # Remove the destination first so we replace any stale entry — including a
     # dangling symlink left by an older dev setup (cp would follow it and fail).

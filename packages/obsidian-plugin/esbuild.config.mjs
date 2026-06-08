@@ -47,7 +47,11 @@ const ctx = await esbuild.context({
   format: "cjs",
   platform: "browser",
   target: "es2022",
-  external: ["obsidian", "electron", "@modelcontextprotocol/sdk"],
+  // node:child_process is externalized (not browser-shimmed): Obsidian's renderer
+  // is a Node environment, and probe.ts does `await import("node:child_process")`
+  // to spawn the bundled mcp-probe.mjs. The SDK stays external because the probe
+  // runs it in that spawned Node child, never in the renderer.
+  external: ["obsidian", "electron", "@modelcontextprotocol/sdk", "node:child_process"],
   outfile: "main.js",
   sourcemap: watch ? "inline" : false,
   logLevel: "info",
@@ -66,30 +70,34 @@ const ctx = await esbuild.context({
 
 if (watch) { await ctx.watch(); } else { await ctx.rebuild(); await ctx.dispose(); }
 
-// ---- Bundle the MCP server into a self-contained file shipped in the plugin
-// folder. The agent (Claude Code) spawns this as its own Node child process
-// over stdio — it is NOT loaded into Obsidian's renderer — so it targets
-// platform:node and INLINES all deps (opposite of the main bundle, which keeps
-// @modelcontextprotocol/sdk external). Output sits next to main.js so it ships
-// with the plugin and the "Copy setup prompt" button can point node at it.
-const serverCtx = await esbuild.context({
-  entryPoints: ["../mcp-server/src/server.ts"],
-  bundle: true,
-  // The server entry uses top-level await and import.meta.url, which require
-  // ESM format. CJS does not support either. We emit .mjs so Node treats the
-  // file as ESM regardless of the nearest package.json's "type" field.
-  // The banner polyfills `require` for bundled CJS deps (e.g. yaml) whose
-  // dynamic require() calls would otherwise throw in an ESM context.
-  format: "esm",
-  platform: "node",
-  target: "node18",
-  outfile: "mcp-server.mjs",
-  sourcemap: watch ? "inline" : false,
-  logLevel: "info",
-  banner: {
-    js: `import { createRequire } from "module"; const require = createRequire(import.meta.url);`,
-  },
-  // No externals: the server must run with only the user's system `node`.
-});
+// ---- Node-side bundles shipped INSIDE the plugin folder, spawned by the plugin
+// as their own Node child processes (NOT loaded into Obsidian's renderer):
+//   - mcp-server.mjs : the workflow MCP server the user's agent connects to.
+//   - mcp-probe.mjs  : connects to another MCP server and lists its tools, so
+//                      the MCP settings tab can probe servers. The renderer must
+//                      NOT import the MCP SDK directly — it has no module
+//                      resolver for it and the SDK's stdio client needs Node.
+// Both target platform:node and INLINE all deps (opposite of the browser main
+// bundle, which keeps @modelcontextprotocol/sdk external) so they run with only
+// the user's system `node`. ESM (.mjs): the entries use top-level await and/or
+// import.meta.url, which CJS cannot host; Node runs .mjs as ESM regardless of
+// the nearest package.json "type". The banner polyfills `require` for bundled
+// CJS deps (e.g. yaml) whose dynamic require() would otherwise throw under ESM.
+async function nodeBundle(entryPoint, outfile) {
+  const ctx = await esbuild.context({
+    entryPoints: [entryPoint],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    target: "node18",
+    outfile,
+    sourcemap: watch ? "inline" : false,
+    logLevel: "info",
+    banner: { js: `import { createRequire } from "module"; const require = createRequire(import.meta.url);` },
+    // No externals: must run with only the user's system `node`.
+  });
+  if (watch) { await ctx.watch(); } else { await ctx.rebuild(); await ctx.dispose(); }
+}
 
-if (watch) { await serverCtx.watch(); } else { await serverCtx.rebuild(); await serverCtx.dispose(); }
+await nodeBundle("../mcp-server/src/server.ts", "mcp-server.mjs");
+await nodeBundle("../mcp-server/src/probe-cli.ts", "mcp-probe.mjs");

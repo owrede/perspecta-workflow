@@ -3,6 +3,11 @@
  *  which CJS cannot host. Node runs a .mjs file as ESM regardless of package type. */
 export const MCP_SERVER_ARTIFACT = "mcp-server.mjs";
 
+/** Filename of the bundled MCP probe helper shipped inside the plugin folder.
+ *  Spawned as a Node child process to list another server's tools, so the
+ *  renderer never imports the MCP SDK directly. Same ESM rationale as above. */
+export const MCP_PROBE_ARTIFACT = "mcp-probe.mjs";
+
 /** Name the perspecta-workflow server is registered under in the agent's .mcp.json. */
 export const MCP_SERVER_NAME = "perspecta-workflow";
 

@@ -15,7 +15,7 @@ import { exportClaudeCodeWorkflowFile, formatConnectorSuffix } from "./commands/
 import { PflowEditorView, VIEW_TYPE_PFLOW } from "./views/pflow-editor/view.js";
 import { applyMcpExpectedGrants } from "./views/pflow-editor/flow-map.js";
 import { parseMcpJsonServers } from "./mcp/mcpJson.js";
-import { buildMcpSetupPrompt, MCP_SERVER_ARTIFACT } from "./mcp/setupPrompt.js";
+import { buildMcpSetupPrompt, MCP_SERVER_ARTIFACT, MCP_PROBE_ARTIFACT } from "./mcp/setupPrompt.js";
 import { NodeMcpProbe, probedToolsToRegistry } from "./mcp/probe.js";
 
 interface NoteFileRef { id: string; file: string; }
@@ -85,27 +85,34 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   /**
-   * Resolve the bundled MCP server's absolute path and build the agent setup
-   * prompt. Returns { prompt } when the artifact is present, or { reason } when
-   * it is not (e.g. a dev build skipped the bundling step). Desktop-only, so the
-   * adapter is always a FileSystemAdapter — getFullPath() is reliable.
+   * Resolve a bundled plugin artifact (e.g. mcp-server.mjs, mcp-probe.mjs) to an
+   * OS-native absolute path, or return a reason it can't be resolved. Desktop-only,
+   * so the adapter is always a FileSystemAdapter — getFullPath() is reliable.
+   * `manifest.dir` is vault-relative (".obsidian/plugins/perspecta-workflow") and
+   * is always set for an installed plugin. getFullPath needs Obsidian ≥ 1.7.2.
    */
-  async mcpSetupPrompt(): Promise<{ prompt: string } | { reason: string }> {
+  private async pluginArtifactAbsPath(artifact: string): Promise<{ absPath: string } | { reason: string }> {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) {
       return { reason: "MCP setup requires a desktop vault." };
     }
-    // manifest.dir is vault-relative (e.g. ".obsidian/plugins/perspecta-workflow")
-    // and is always set for an installed plugin.
-    const relPath = `${this.manifest.dir!}/${MCP_SERVER_ARTIFACT}`;
+    const relPath = `${this.manifest.dir!}/${artifact}`;
     if (!(await adapter.exists(relPath))) {
-      return { reason: `Bundled server (${MCP_SERVER_ARTIFACT}) not found in the plugin folder — rebuild the plugin.` };
+      return { reason: `Bundled file (${artifact}) not found in the plugin folder — rebuild the plugin.` };
     }
-    // getFullPath turns the vault-relative path into an OS-native absolute path
-    // with correct separators on every platform (needs Obsidian ≥ 1.7.2). The
-    // result is handed to `node` via the agent's .mcp.json.
-    const absPath = adapter.getFullPath(relPath);
-    return { prompt: buildMcpSetupPrompt(absPath) };
+    return { absPath: adapter.getFullPath(relPath) };
+  }
+
+  /**
+   * Resolve the bundled MCP server's absolute path and build the agent setup
+   * prompt. Returns { prompt } when the artifact is present, or { reason } when
+   * it is not (e.g. a dev build skipped the bundling step).
+   */
+  async mcpSetupPrompt(): Promise<{ prompt: string } | { reason: string }> {
+    const resolved = await this.pluginArtifactAbsPath(MCP_SERVER_ARTIFACT);
+    if ("reason" in resolved) return resolved;
+    // The absolute path is handed to `node` via the agent's .mcp.json.
+    return { prompt: buildMcpSetupPrompt(resolved.absPath) };
   }
 
   /** Probe one server (cold→hot): launch it, list its tools, cache them in the
@@ -124,7 +131,11 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     // Note: concurrent probes of the same server (rare for a manual settings
     // action) resolve last-writer-wins; no corruption, just a possible flicker.
     try {
-      const tools = await new NodeMcpProbe().probe(server);
+      // Probing runs the SDK in a spawned Node child (mcp-probe.mjs), never in
+      // the renderer — the renderer can't resolve the externalized MCP SDK.
+      const probe = await this.pluginArtifactAbsPath(MCP_PROBE_ARTIFACT);
+      if ("reason" in probe) throw new Error(probe.reason);
+      const tools = await new NodeMcpProbe(probe.absPath).probe(server);
       reg[name] = { whitelisted: true, probe: { status: "hot", probedAt: new Date().toISOString() }, tools: probedToolsToRegistry(tools) };
     } catch (e) {
       reg[name] = { whitelisted: true, probe: { status: "failed", error: (e as Error).message }, tools: prevTools };

@@ -3,6 +3,9 @@ import type { PflowDocument } from "./schema.js";
 /** Per-tool permission, modelled on the Claude app (Blocked / Ask / Always-allow). */
 export type McpToolPermission = "blocked" | "ask" | "allow";
 
+/** Stored permission value: "default" means resolve via the server's groupDefaults. */
+export type McpStoredPermission = "default" | McpToolPermission;
+
 /** Read/interactive/write grouping (UI grouping + bulk action only; NOT a runtime semantic). */
 export type McpToolGroup = "read" | "interactive" | "write";
 
@@ -17,16 +20,25 @@ export interface McpRegistryTool {
   description?: string;
   group: McpToolGroup;
   groupSource: "annotation" | "heuristic" | "user";
-  permission: McpToolPermission;
+  permission: McpStoredPermission;
 }
 
 export interface McpRegistryServer {
   whitelisted: boolean;
   probe: { status: "cold" | "probing" | "hot" | "failed"; error?: string; probedAt?: string };
+  groupDefaults: Record<McpToolGroup, McpToolPermission>;
   tools: Record<string, McpRegistryTool>;
 }
 
 export type McpRegistry = Record<string, McpRegistryServer>;
+
+export const DEFAULT_GROUP_DEFAULTS: Record<McpToolGroup, McpToolPermission> = {
+  read: "ask", interactive: "ask", write: "ask",
+};
+
+export function serverGroupDefaults(server: McpRegistryServer): Record<McpToolGroup, McpToolPermission> {
+  return server.groupDefaults ?? DEFAULT_GROUP_DEFAULTS;
+}
 
 const READ_VERBS = /^(get|list|search|read|fetch|describe|view|find|query|show)(_|$)|_(get|list|search|read|fetch|describe|view)(_|$)/i;
 const WRITE_VERBS = /^(create|update|delete|write|set|add|remove|put|post|patch|insert|upsert|send|rename)(_|$)/i;
@@ -69,10 +81,18 @@ export function applyGroupPermission(
   return { ...server, tools };
 }
 
+/** Resolve a tool's effective permission: if stored as "default", use the server's group default. Pure. */
+export function resolveToolPermission(server: McpRegistryServer, toolName: string): McpToolPermission {
+  const t = server.tools[toolName];
+  if (!t) return "blocked";
+  if (t.permission !== "default") return t.permission;
+  return serverGroupDefaults(server)[t.group];
+}
+
 /** Snapshot tool→permission for a server (stored on an mcp node at export). Pure. */
 export function snapshotGrants(server: McpRegistryServer): Record<string, McpToolPermission> {
   const out: Record<string, McpToolPermission> = {};
-  for (const [name, t] of Object.entries(server.tools)) out[name] = t.permission;
+  for (const name of Object.keys(server.tools)) out[name] = resolveToolPermission(server, name);
   return out;
 }
 
@@ -87,7 +107,7 @@ export function isPolicyStricter(
 ): string[] {
   const stricter: string[] = [];
   for (const [name, exp] of Object.entries(expected)) {
-    const localPerm = local.tools[name]?.permission ?? "blocked";
+    const localPerm = local.tools[name] ? resolveToolPermission(local, name) : "blocked";
     if (STRENGTH[localPerm] < STRENGTH[exp]) stricter.push(name);
   }
   return stricter.sort();

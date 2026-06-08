@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyToolGroup, resolveServerGrants, applyGroupPermission } from "../../src/pflow/mcp-registry.js";
+import { classifyToolGroup, resolveServerGrants, applyGroupPermission, serverGroupDefaults, DEFAULT_GROUP_DEFAULTS } from "../../src/pflow/mcp-registry.js";
 import type { McpRegistryServer } from "../../src/pflow/mcp-registry.js";
 
 describe("classifyToolGroup", () => {
@@ -33,9 +33,21 @@ describe("classifyToolGroup", () => {
   });
 });
 
+describe("serverGroupDefaults", () => {
+  it("returns the server's groupDefaults when present", () => {
+    const s = { whitelisted: true, probe: { status: "hot" as const }, groupDefaults: { read: "allow" as const, interactive: "ask" as const, write: "blocked" as const }, tools: {} };
+    expect(serverGroupDefaults(s).read).toBe("allow");
+  });
+  it("falls back to all-ask for a pre-existing server without the field", () => {
+    const legacy = { whitelisted: true, probe: { status: "hot" as const }, tools: {} } as unknown as import("../../src/pflow/mcp-registry.js").McpRegistryServer;
+    expect(serverGroupDefaults(legacy)).toEqual(DEFAULT_GROUP_DEFAULTS);
+  });
+});
+
 const server: McpRegistryServer = {
   whitelisted: true,
   probe: { status: "hot" },
+  groupDefaults: { read: "ask", interactive: "ask", write: "ask" },
   tools: {
     get_design:    { group: "read",  groupSource: "heuristic", permission: "allow" },
     get_screenshot:{ group: "read",  groupSource: "heuristic", permission: "ask" },
@@ -54,6 +66,7 @@ describe("resolveServerGrants", () => {
   it("sorts multiple tools within each bucket (deterministic order)", () => {
     const multi: McpRegistryServer = {
       whitelisted: true, probe: { status: "hot" },
+      groupDefaults: DEFAULT_GROUP_DEFAULTS,
       tools: {
         zebra: { group: "read", groupSource: "heuristic", permission: "allow" },
         alpha: { group: "read", groupSource: "heuristic", permission: "allow" },
@@ -89,6 +102,7 @@ import type { PflowDocument } from "../../src/pflow/schema.js";
 describe("snapshotGrants / isPolicyStricter", () => {
   const hot: McpRegistryServer = {
     whitelisted: true, probe: { status: "hot" },
+    groupDefaults: DEFAULT_GROUP_DEFAULTS,
     tools: {
       a: { group: "read", groupSource: "heuristic", permission: "allow" },
       b: { group: "write", groupSource: "heuristic", permission: "ask" },
@@ -107,7 +121,7 @@ describe("snapshotGrants / isPolicyStricter", () => {
     expect(isPolicyStricter({ a: "allow", b: "ask" }, looser)).toEqual([]);
   });
   it("treats a tool absent from the local registry as blocked (strictest)", () => {
-    const empty: McpRegistryServer = { whitelisted: true, probe: { status: "hot" }, tools: {} };
+    const empty: McpRegistryServer = { whitelisted: true, probe: { status: "hot" }, groupDefaults: DEFAULT_GROUP_DEFAULTS, tools: {} };
     // expected a=allow, but local has no `a` at all → absent = blocked = stricter
     expect(isPolicyStricter({ a: "allow" }, empty)).toEqual(["a"]);
   });
@@ -123,7 +137,7 @@ describe("summarizeWorkflowResources", () => {
       { id: "d", kind: "agent", label: "D", inputs: [], outputs: [] },
     ], wires: [],
   } as unknown as PflowDocument;
-  const reg = { figma: { whitelisted: true, probe: { status: "hot" as const }, tools: {
+  const reg = { figma: { whitelisted: true, probe: { status: "hot" as const }, groupDefaults: DEFAULT_GROUP_DEFAULTS, tools: {
     get: { group: "read" as const, groupSource: "heuristic" as const, permission: "allow" as const },
   } } };
   it("rolls up per service with node counts and met/not-met", () => {

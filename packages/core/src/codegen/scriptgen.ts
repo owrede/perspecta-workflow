@@ -11,6 +11,8 @@ import {
   emitSplitJoinRegion,
   emitBranchRegion,
 } from "./emit-kinds.js";
+import type { McpRegistryServer } from "../pflow/mcp-registry.js";
+import { resolveServerGrants } from "../pflow/mcp-registry.js";
 
 /** JSON.stringify yields a spec-compliant double-quoted JS string literal with
  *  correct escaping of quotes, backslashes, and control chars. */
@@ -175,6 +177,32 @@ function tokenInputSource(doc: PflowDocument, node: PflowNode, name: string): st
  *  guaranteeing the interpolation lands exactly where the token was. */
 function tokenSentinel(i: number): string {
   return ` ${i} `;
+}
+
+/** The MCP-qualified tool id Claude Code uses for permission lists. */
+function mcpToolId(server: string, tool: string): string {
+  return `mcp__${server}__${tool}`;
+}
+
+/** Generate the `.claude/agents/<name>.md` content for an MCP node: a subagent
+ *  granted exactly `server`, with allow/disallow tool lists derived from the
+ *  registry (allow → allowedTools; blocked → disallowedTools; ask → neither, so
+ *  it prompts at run time). Deterministic. */
+export function mcpSubagentMarkdown(
+  name: string,
+  server: string,
+  serverReg: McpRegistryServer,
+  description: string,
+): string {
+  const g = resolveServerGrants(serverReg);
+  const allow = g.allow.map((t) => mcpToolId(server, t));
+  const disallow = g.blocked.map((t) => mcpToolId(server, t));
+  const lines: string[] = ["---", `name: ${name}`, `description: ${JSON.stringify(description)}`, "mcpServers:", `  - ${server}`];
+  if (allow.length) { lines.push("allowedTools:"); for (const t of allow) lines.push(`  - ${t}`); }
+  if (disallow.length) { lines.push("disallowedTools:"); for (const t of disallow) lines.push(`  - ${t}`); }
+  lines.push("---", "", `You may use the **${server}** MCP server to accomplish this step. ` +
+    `Use only the tools you are permitted; tools marked ask will prompt for approval.`, "");
+  return lines.join("\n");
 }
 
 export function buildAgentCall(

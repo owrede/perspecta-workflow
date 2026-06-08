@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { classifyToolGroup } from "../../src/pflow/mcp-registry.js";
+import { classifyToolGroup, resolveServerGrants, applyGroupPermission } from "../../src/pflow/mcp-registry.js";
+import type { McpRegistryServer } from "../../src/pflow/mcp-registry.js";
 
 describe("classifyToolGroup", () => {
   it("uses readOnlyHint annotation when present", () => {
@@ -27,5 +28,33 @@ describe("classifyToolGroup", () => {
     expect(classifyToolGroup("create_view")).toBe("write");
     expect(classifyToolGroup("set_readonly_flag")).toBe("write");
     expect(classifyToolGroup("update_design")).toBe("write");
+  });
+});
+
+const server: McpRegistryServer = {
+  whitelisted: true,
+  probe: { status: "hot" },
+  tools: {
+    get_design:    { group: "read",  groupSource: "heuristic", permission: "allow" },
+    get_screenshot:{ group: "read",  groupSource: "heuristic", permission: "ask" },
+    create_file:   { group: "write", groupSource: "heuristic", permission: "blocked" },
+  },
+};
+
+describe("resolveServerGrants", () => {
+  it("partitions tools by permission", () => {
+    const g = resolveServerGrants(server);
+    expect(g.allow).toEqual(["get_design"]);
+    expect(g.ask).toEqual(["get_screenshot"]);
+    expect(g.blocked).toEqual(["create_file"]);
+  });
+});
+
+describe("applyGroupPermission", () => {
+  it("blocking the write group makes the server read-only", () => {
+    const next = applyGroupPermission(server, "write", "blocked");
+    expect(next.tools.create_file.permission).toBe("blocked");
+    expect(next.tools.get_design.permission).toBe("allow");
+    expect(server.tools.create_file.permission).toBe("blocked"); // input unchanged (immutable)
   });
 });

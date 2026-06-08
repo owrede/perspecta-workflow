@@ -1,4 +1,4 @@
-import { generateClaudeCodeWorkflow, type PflowDocument } from "@perspecta/core";
+import { buildWorkflowArtifacts, type PflowDocument, type McpRegistry } from "@perspecta/core";
 
 /** The slice of Obsidian's vault adapter this helper needs. Declared structurally
  *  so the function is unit-testable with a fake and reusable from both the plugin
@@ -9,25 +9,26 @@ export interface WorkflowWriteAdapter {
   write(path: string, data: string): Promise<void>;
 }
 
-/** Generate the Claude Code dynamic workflow for `doc` and write it to
- *  `.claude/workflows/<workflow.name>.js`, creating the directories if needed.
- *  Returns the vault-relative path written. Throws (with the validation/codegen
- *  message) if the document does not compile — callers surface that to the user.
- *
- *  This is the single source of truth for "export a .pflow to a runnable Claude
- *  Code workflow": the palette command and the inspector Export button both call
- *  it, so the output and destination never drift. */
+export interface ExportResult { workflowPath: string; subagentPaths: string[]; }
+
+/** Generate the Claude Code workflow for `doc` and write it to
+ *  `.claude/workflows/<name>.js`, plus one `.claude/agents/<wf>-<node>.md` per
+ *  MCP node (granting its server per the registry). Generates BEFORE any write
+ *  so an invalid doc throws without leaving a stale file. Returns the paths. */
 export async function exportClaudeCodeWorkflowFile(
   adapter: WorkflowWriteAdapter,
   doc: PflowDocument,
-): Promise<string> {
-  // Generate first: if the document is invalid, throw BEFORE touching the
-  // filesystem so a failed export never leaves a half-written or stale file.
-  const code = generateClaudeCodeWorkflow(doc);
+  registry: McpRegistry,
+): Promise<ExportResult> {
+  const { workflowJs, subagents } = buildWorkflowArtifacts(doc, registry); // throws on invalid doc
   if (!(await adapter.exists(".claude"))) await adapter.mkdir(".claude");
-  const dir = ".claude/workflows";
-  if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
-  const path = `${dir}/${doc.workflow.name}.js`;
-  await adapter.write(path, code);
-  return path;
+  if (!(await adapter.exists(".claude/workflows"))) await adapter.mkdir(".claude/workflows");
+  const workflowPath = `.claude/workflows/${doc.workflow.name}.js`;
+  await adapter.write(workflowPath, workflowJs);
+  const subagentPaths: string[] = [];
+  if (subagents.length) {
+    if (!(await adapter.exists(".claude/agents"))) await adapter.mkdir(".claude/agents");
+    for (const s of subagents) { await adapter.write(s.path, s.content); subagentPaths.push(s.path); }
+  }
+  return { workflowPath, subagentPaths };
 }

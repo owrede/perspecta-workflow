@@ -200,9 +200,9 @@ describe("defaultPortsForKind", () => {
 });
 
 describe("COMPILABLE_KINDS", () => {
-  it("is all ten kinds now that codegen supports every kind", () => {
+  it("is all eleven kinds now that codegen supports every kind", () => {
     expect(COMPILABLE_KINDS).toEqual([
-      "input", "output", "agent", "split", "join", "loop", "verify", "synthesize", "branch", "script",
+      "input", "output", "agent", "split", "join", "loop", "verify", "synthesize", "branch", "mcp", "script",
     ]);
   });
 });

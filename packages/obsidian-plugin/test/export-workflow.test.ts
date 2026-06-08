@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { exportClaudeCodeWorkflowFile, type WorkflowWriteAdapter } from "../src/commands/exportWorkflow.js";
 import type { PflowDocument } from "@perspecta/core";
+import type { McpRegistry } from "@perspecta/core";
 
 // Minimal valid workflow: input → agent(save via write_note) → output.
 const DOC: PflowDocument = {
@@ -34,14 +35,14 @@ function fakeAdapter() {
 describe("exportClaudeCodeWorkflowFile", () => {
   it("writes .claude/workflows/<name>.js and returns the path", async () => {
     const { adapter, files, dirs } = fakeAdapter();
-    const path = await exportClaudeCodeWorkflowFile(adapter, DOC);
-    expect(path).toBe(".claude/workflows/my-flow.js");
-    expect(files.has(path)).toBe(true);
+    const { workflowPath } = await exportClaudeCodeWorkflowFile(adapter, DOC, {});
+    expect(workflowPath).toBe(".claude/workflows/my-flow.js");
+    expect(files.has(workflowPath)).toBe(true);
     expect(dirs.has(".claude")).toBe(true);
     expect(dirs.has(".claude/workflows")).toBe(true);
     // The written content is the generated workflow.
-    expect(files.get(path)).toContain("export const meta");
-    expect(files.get(path)).toContain('name: "my-flow"');
+    expect(files.get(workflowPath)).toContain("export const meta");
+    expect(files.get(workflowPath)).toContain('name: "my-flow"');
   });
 
   it("does not re-mkdir existing directories", async () => {
@@ -51,14 +52,44 @@ describe("exportClaudeCodeWorkflowFile", () => {
     await adapter.mkdir(".claude/workflows");
     let mkdirCalls = 0;
     const counting: WorkflowWriteAdapter = { ...adapter, mkdir: (p) => { mkdirCalls++; return adapter.mkdir(p); } };
-    await exportClaudeCodeWorkflowFile(counting, DOC);
+    await exportClaudeCodeWorkflowFile(counting, DOC, {});
     expect(mkdirCalls).toBe(0);
   });
 
   it("throws (without writing) when the document does not compile", async () => {
     const { adapter, files } = fakeAdapter();
     const broken = { ...DOC, nodes: [] } as unknown as PflowDocument;
-    await expect(exportClaudeCodeWorkflowFile(adapter, broken)).rejects.toThrow();
+    await expect(exportClaudeCodeWorkflowFile(adapter, broken, {})).rejects.toThrow();
     expect(files.size).toBe(0); // nothing written on failure
   });
+});
+
+const MCP_DOC = {
+  pflowFormatVersion: 1, workflow: { name: "wf", description: "d" },
+  nodes: [
+    { id: "in", kind: "input", label: "In", inputs: [], outputs: [{ id: "url", name: "url", schema: { type: "string" } }] },
+    { id: "fig", kind: "mcp", label: "Fetch", prompt: "Use figma {{in:url}} {{out:design}}",
+      inputs: [{ id: "in:url", name: "url", schema: { type: "string" }, required: true }],
+      outputs: [{ id: "out:design", name: "design", schema: { type: "string" } }],
+      config: { mcpServer: "figma" } },
+    { id: "end", kind: "output", label: "Out", inputs: [{ id: "in", name: "design", schema: { type: "string" }, required: true }], outputs: [] },
+  ],
+  wires: [
+    { from: { nodeId: "in", portId: "url" }, to: { nodeId: "fig", portId: "in:url" } },
+    { from: { nodeId: "fig", portId: "out:design" }, to: { nodeId: "end", portId: "in" } },
+  ],
+} as never;
+
+const REG: McpRegistry = { figma: { whitelisted: true, probe: { status: "hot" }, tools: {
+  get_design: { group: "read", groupSource: "heuristic", permission: "allow" },
+} } };
+
+it("writes the workflow js AND a subagent .md for each mcp node", async () => {
+  const { adapter, files } = fakeAdapter();
+  const res = await exportClaudeCodeWorkflowFile(adapter, MCP_DOC, REG);
+  expect(files.has(".claude/workflows/wf.js")).toBe(true);
+  expect(files.has(".claude/agents/wf-fig.md")).toBe(true);
+  expect(files.get(".claude/agents/wf-fig.md")).toContain("mcp__figma__get_design");
+  expect(res.subagentPaths).toContain(".claude/agents/wf-fig.md");
+  expect(res.workflowPath).toBe(".claude/workflows/wf.js");
 });

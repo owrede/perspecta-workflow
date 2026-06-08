@@ -130,12 +130,13 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   /** Compile the given pflow document to a native Claude Code workflow and
-   *  write it to `.claude/workflows/<name>.js`. Shared with the editor's
-   *  inspector Export button via exportClaudeCodeWorkflowFile. */
+   *  write it to `.claude/workflows/<name>.js`, plus one `.claude/agents/<wf>-<node>.md`
+   *  per MCP node. Shared with the editor's inspector Export button. */
   private async exportClaudeCodeWorkflow(doc: PflowDocument): Promise<void> {
     try {
-      const path = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, doc);
-      new Notice(`Perspecta Workflow: exported ${path}`);
+      const res = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, doc, this.settings.mcpRegistry);
+      const extra = res.subagentPaths.length ? ` + ${res.subagentPaths.length} connector agent(s)` : "";
+      new Notice(`Perspecta Workflow: exported ${res.workflowPath}${extra}`);
     } catch (e) {
       new Notice(`Perspecta Workflow: export failed — ${(e as Error).message}`);
     }

@@ -1,5 +1,5 @@
 import { MarkerType } from "@xyflow/system";
-import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants } from "@perspecta/core";
+import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants, snapshotGrants } from "@perspecta/core";
 import type { TokenPort, TokenType, McpRegistry } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 
@@ -662,6 +662,22 @@ export function applyKindChange(doc: PflowDocument, nodeId: string, kind: NodeKi
     ...doc,
     nodes: doc.nodes.map((n) => (n.id === nodeId ? { ...n, kind, inputs, outputs } : n)),
     wires: doc.wires.filter((w) => !orphans.has(w)),
+  };
+}
+
+/** Stamp each mcp node's config.expectedGrants with the snapshot of its server's
+ *  current per-tool permission (the import-warning compares against this). Only
+ *  stamps a node whose bound server is hot in the registry. Immutable. */
+export function applyMcpExpectedGrants(doc: PflowDocument, registry: McpRegistry): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.kind !== "mcp") return n;
+      const server = n.config?.mcpServer as string | undefined;
+      const reg = server ? registry[server] : undefined;
+      if (!reg || reg.probe.status !== "hot") return n;
+      return { ...n, config: { ...(n.config ?? {}), expectedGrants: snapshotGrants(reg) } };
+    }),
   };
 }
 

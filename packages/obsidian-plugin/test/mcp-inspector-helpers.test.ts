@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyMcpServer, grantSummary } from "../src/views/pflow-editor/flow-map.js";
+import { applyMcpServer, grantSummary, applyMcpExpectedGrants } from "../src/views/pflow-editor/flow-map.js";
 import type { PflowDocument } from "@perspecta/core";
 import type { McpRegistry } from "@perspecta/core";
 
@@ -37,5 +37,32 @@ describe("grantSummary", () => {
   });
   it("reports a cold/failed status", () => {
     expect(grantSummary({ x: { whitelisted: true, probe: { status: "failed", error: "boom" }, tools: {} } }, "x")).toBe("failed: boom");
+  });
+});
+
+describe("applyMcpExpectedGrants", () => {
+  it("stamps expectedGrants from a hot server's per-tool permissions", () => {
+    const d = {
+      pflowFormatVersion: 1, workflow: { name: "w", description: "d" },
+      nodes: [{ id: "m", kind: "mcp", label: "M", prompt: "p", inputs: [], outputs: [], config: { mcpServer: "figma" } }],
+      wires: [],
+    } as unknown as import("@perspecta/core").PflowDocument;
+    const reg: McpRegistry = { figma: { whitelisted: true, probe: { status: "hot" }, tools: {
+      a: { group: "read", groupSource: "heuristic", permission: "allow" },
+      b: { group: "write", groupSource: "heuristic", permission: "ask" },
+    } } };
+    const next = applyMcpExpectedGrants(d, reg);
+    expect(next.nodes[0].config?.expectedGrants).toEqual({ a: "allow", b: "ask" });
+    // immutable
+    expect(d.nodes[0].config?.expectedGrants).toBeUndefined();
+  });
+  it("leaves a node alone when its server is not hot", () => {
+    const d = {
+      pflowFormatVersion: 1, workflow: { name: "w", description: "d" },
+      nodes: [{ id: "m", kind: "mcp", label: "M", inputs: [], outputs: [], config: { mcpServer: "figma" } }],
+      wires: [],
+    } as unknown as import("@perspecta/core").PflowDocument;
+    const next = applyMcpExpectedGrants(d, {});
+    expect(next.nodes[0].config?.expectedGrants).toBeUndefined();
   });
 });

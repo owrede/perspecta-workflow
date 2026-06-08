@@ -72,6 +72,11 @@ export class PerspectaSettingTab extends PluginSettingTab {
               },
               onError: (err) => new Notice(`Perspecta Workflow: install failed - ${(err as Error).message}`),
             });
+
+            // Connect a coding agent to the bundled MCP server. Resolving the
+            // server path is async, so append the row when it resolves — same
+            // void-an-inner-async approach the MCP tab uses for renderMcpTab.
+            void this.renderMcpSetupRow(el);
           },
         },
         {
@@ -91,6 +96,28 @@ export class PerspectaSettingTab extends PluginSettingTab {
           });
         },
       },
+    });
+  }
+
+  private async renderMcpSetupRow(el: HTMLElement): Promise<void> {
+    const setup = await this.plugin.mcpSetupPrompt();
+    const row = new Setting(el)
+      .setName("Connect a coding agent (MCP)")
+      .setDesc(
+        "reason" in setup
+          ? setup.reason
+          : "Copies a prompt to paste into a coding agent running in this vault. It registers the bundled perspecta-workflow MCP server so the agent can run your workflows.",
+      );
+    row.addButton((btn) => {
+      btn.setButtonText("Copy setup prompt");
+      if ("reason" in setup) {
+        btn.setDisabled(true);
+      } else {
+        btn.setCta().onClick(async () => {
+          await navigator.clipboard.writeText(setup.prompt);
+          new Notice("Setup prompt copied — paste it into your coding agent running in this vault.");
+        });
+      }
     });
   }
 

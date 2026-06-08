@@ -30,6 +30,12 @@ export interface SplitJoinRegion {
  *  the result variable. `reconverges` lists those exit wires (consumer side). */
 export interface BranchRegion {
   kind: "branch";
+  /** "BRANCH" for a branch node, "EVAL" for an eval node. Drives the verdict
+   *  label the generated agent emits (BRANCH: <label> vs EVAL: pass/fail). */
+  verb: "BRANCH" | "EVAL";
+  /** Eval-only: when true, a `fail` verdict throws (hard quality gate). Always
+   *  false for branch nodes. */
+  blockOnFail: boolean;
   entryId: string;
   paths: {
     label: string;
@@ -157,7 +163,7 @@ function pathNodesBetween(doc: PflowDocument, startId: string, endId: string): s
 
 function findBranchRegions(doc: PflowDocument): BranchRegion[] {
   const regions: BranchRegion[] = [];
-  for (const branch of doc.nodes.filter((n) => n.kind === "branch")) {
+  for (const branch of doc.nodes.filter((n) => n.kind === "branch" || n.kind === "eval")) {
     // Raw forward-reachable set per labelled path.
     const raw: { label: string; ids: Set<string> }[] = [];
     for (const port of branch.outputs) {
@@ -205,7 +211,9 @@ function findBranchRegions(doc: PflowDocument): BranchRegion[] {
       reconverges.push({ nodeId: w.to.nodeId, portId: w.to.portId });
     }
 
-    regions.push({ kind: "branch", entryId: branch.id, paths, reconverges });
+    const verb = branch.kind === "eval" ? "EVAL" : "BRANCH";
+    const blockOnFail = branch.kind === "eval" && branch.config?.blockOnFail === true;
+    regions.push({ kind: "branch", verb, blockOnFail, entryId: branch.id, paths, reconverges });
   }
   return regions;
 }

@@ -138,6 +138,36 @@ describe("analyzeRegions — branch", () => {
   });
 });
 
+describe("analyzeRegions — eval", () => {
+  const EVAL_DOC = {
+    pflowFormatVersion: 1 as const,
+    workflow: { name: "wf", description: "" },
+    nodes: [
+      { id: "in", kind: "input" as const, label: "in", inputs: [], outputs: [{ id: "out:x", name: "x", schema: { type: "string" as const } }] },
+      { id: "ev", kind: "eval" as const, label: "Gate", prompt: "Evaluate {{in:candidate}}. EVAL: pass/fail. {{out:pass}} {{out:fail}}",
+        inputs: [{ id: "in:candidate", name: "candidate", schema: { type: "string" as const } }],
+        outputs: [{ id: "out:pass", name: "pass", schema: { type: "string" as const } }, { id: "out:fail", name: "fail", schema: { type: "string" as const } }],
+        config: { mode: "criteria", blockOnFail: true } },
+      { id: "okOut", kind: "output" as const, label: "ok", inputs: [{ id: "in:y", name: "y", schema: { type: "string" as const } }], outputs: [] },
+      { id: "badOut", kind: "output" as const, label: "bad", inputs: [{ id: "in:z", name: "z", schema: { type: "string" as const } }], outputs: [] },
+    ],
+    wires: [
+      { from: { nodeId: "in", portId: "out:x" }, to: { nodeId: "ev", portId: "in:candidate" } },
+      { from: { nodeId: "ev", portId: "out:pass" }, to: { nodeId: "okOut", portId: "in:y" } },
+      { from: { nodeId: "ev", portId: "out:fail" }, to: { nodeId: "badOut", portId: "in:z" } },
+    ],
+  };
+
+  it("detects an eval node as a branch-shaped region with verb EVAL and blockOnFail", () => {
+    const { regions } = analyzeRegions(EVAL_DOC);
+    const region = regions.find((r) => r.kind === "branch" && r.entryId === "ev");
+    expect(region).toBeDefined();
+    expect((region as any).verb).toBe("EVAL");
+    expect((region as any).blockOnFail).toBe(true);
+    expect((region as any).paths.map((p: any) => p.label).sort()).toEqual(["fail", "pass"]);
+  });
+});
+
 export { LOOP_DOC, SPLITJOIN_DOC, BRANCH_DOC };
 
 

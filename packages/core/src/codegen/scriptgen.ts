@@ -59,7 +59,9 @@ export function varName(doc: PflowDocument, node: PflowNode): string {
 }
 
 /** The generated subagent name (and .md filename stem) for an MCP node:
- *  "<workflow>-<nodeId>", sanitized to the [A-Za-z0-9_-] agentType charset. */
+ *  "<workflow>-<nodeId>", sanitized to the [A-Za-z0-9_-] agentType charset.
+ *  Both workflow.name and node.id are already schema-constrained to [A-Za-z0-9_-];
+ *  the replace is defense-in-depth for callers that bypass parsePflow. */
 export function mcpAgentTypeName(doc: PflowDocument, node: PflowNode): string {
   return `${doc.workflow.name}-${node.id}`.replace(/[^A-Za-z0-9_-]/g, "-");
 }
@@ -334,7 +336,7 @@ function emitNode(doc: PflowDocument, node: PflowNode, overrides?: Map<string, s
     case "mcp": {
       const v = varName(doc, node);
       const at = mcpAgentTypeName(doc, node);
-      return `  const ${v} = ${buildAgentCall(doc, node, undefined, undefined, at)};`;
+      return `  const ${v} = ${buildAgentCall(doc, node, undefined, overrides, at)};`;
     }
     case "output": {
       const v = inputVar(doc, node, overrides);

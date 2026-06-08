@@ -47,11 +47,14 @@ const ctx = await esbuild.context({
   format: "cjs",
   platform: "browser",
   target: "es2022",
-  // node:child_process is externalized (not browser-shimmed): Obsidian's renderer
-  // is a Node environment, and probe.ts does `await import("node:child_process")`
-  // to spawn the bundled mcp-probe.mjs. The SDK stays external because the probe
-  // runs it in that spawned Node child, never in the renderer.
-  external: ["obsidian", "electron", "@modelcontextprotocol/sdk", "node:child_process"],
+  // child_process (unprefixed) is externalized so esbuild emits a CommonJS
+  // require("child_process") that Electron's renderer resolves at load time.
+  // probe.ts statically imports spawn from it to launch the bundled
+  // mcp-probe.mjs. NOTE: a dynamic import("node:child_process") does NOT work in
+  // the renderer (its ESM loader tries to fetch the bare specifier and fails);
+  // must be a static import of the unprefixed name. The SDK stays external
+  // because the probe runs it in that spawned Node child, never in the renderer.
+  external: ["obsidian", "electron", "@modelcontextprotocol/sdk", "child_process"],
   outfile: "main.js",
   sourcemap: watch ? "inline" : false,
   logLevel: "info",

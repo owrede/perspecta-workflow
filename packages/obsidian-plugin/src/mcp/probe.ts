@@ -1,5 +1,12 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import { classifyToolGroup, type McpRegistryTool, type McpToolAnnotations } from "@perspecta/core";
 import type { McpJsonServer } from "./mcpJson.js";
+
+// `child_process` (unprefixed) is marked external in the plugin build, so esbuild
+// emits a CommonJS `require("child_process")` that Electron's renderer resolves
+// at load time. A dynamic `import("node:child_process")` does NOT work in the
+// renderer — its ESM loader tries to *fetch* the bare specifier and fails with
+// "Failed to fetch dynamically imported module: node:child_process".
 
 /** A tool as returned by an MCP tools/list probe. */
 export interface ProbedTool {
@@ -45,12 +52,12 @@ interface ProbeCliResult {
  *  `import()`. Only stdio servers are supported; others reject with a clear error.
  *
  *  @param probeHelperPath absolute path to the bundled mcp-probe.mjs
- *  @param spawnFn injectable child_process.spawn (defaults to node:child_process)
+ *  @param spawnFn injectable spawn (defaults to the statically-imported one)
  */
 export class NodeMcpProbe implements McpProbe {
   constructor(
     private readonly probeHelperPath: string,
-    private readonly spawnFn?: (cmd: string, args: string[]) => import("node:child_process").ChildProcessWithoutNullStreams,
+    private readonly spawnFn: (cmd: string, args: string[]) => ChildProcessWithoutNullStreams = spawn,
   ) {}
 
   async probe(server: McpJsonServer): Promise<ProbedTool[]> {
@@ -60,8 +67,7 @@ export class NodeMcpProbe implements McpProbe {
     if (!server.command) {
       throw new Error(`Stdio server "${server.name}" has no command — check .mcp.json`);
     }
-    const spawn = this.spawnFn ?? (await import("node:child_process")).spawn;
-    const child = spawn("node", [this.probeHelperPath]);
+    const child = this.spawnFn("node", [this.probeHelperPath]);
     const request = JSON.stringify({ command: server.command, args: server.args ?? [], env: server.env });
 
     const result = await new Promise<ProbeCliResult>((resolve, reject) => {

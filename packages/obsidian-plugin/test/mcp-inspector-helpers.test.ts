@@ -15,6 +15,12 @@ describe("applyMcpServer", () => {
     expect(next.nodes[0].config?.mcpServer).toBe("figma");
     expect(doc.nodes[0].config?.mcpServer).toBeUndefined();
   });
+  it("removes the key when the server is empty (no empty-string noise)", () => {
+    const withServer = applyMcpServer(doc, "m", "figma");
+    const cleared = applyMcpServer(withServer, "m", "");
+    expect(cleared.nodes[0].config?.mcpServer).toBeUndefined();
+    expect("mcpServer" in (cleared.nodes[0].config ?? {})).toBe(false);
+  });
 });
 
 describe("grantSummary", () => {

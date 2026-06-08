@@ -631,10 +631,17 @@ export function orphanedWiresForKind(doc: PflowDocument, nodeId: string, kind: N
   });
 }
 
-/** Set an mcp node's bound server (config.mcpServer). Immutable. */
+/** Set (or clear) an mcp node's bound server (config.mcpServer). An empty
+ *  `server` removes the key rather than persisting "". Immutable. */
 export function applyMcpServer(doc: PflowDocument, nodeId: string, server: string): PflowDocument {
-  return { ...doc, nodes: doc.nodes.map((n) =>
-    n.id === nodeId ? { ...n, config: { ...(n.config ?? {}), mcpServer: server } } : n) };
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+      const { mcpServer: _omit, ...rest } = n.config ?? {};
+      return { ...n, config: server ? { ...rest, mcpServer: server } : rest };
+    }),
+  };
 }
 
 /** A one-line grant summary for a server against the registry (for the inspector). */

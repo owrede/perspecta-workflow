@@ -227,6 +227,9 @@
           onchange={(e) => onMcpServer(node!.id, (e.currentTarget as HTMLSelectElement).value)}
         >
           <option value="">— select a service —</option>
+          {#if node.data.mcpServer && !hotServerNames.includes(node.data.mcpServer)}
+            <option value={node.data.mcpServer} disabled>{node.data.mcpServer} (unavailable)</option>
+          {/if}
           {#each hotServerNames as name}<option value={name}>{name}</option>{/each}
         </select>
         {#if node.data.mcpServer}

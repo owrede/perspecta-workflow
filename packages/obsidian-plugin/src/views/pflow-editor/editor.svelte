@@ -37,7 +37,6 @@
     onChange,
     onExport,
     registry,
-    onMcpServer,
   }: {
     file: PflowDocument;
     app: App;
@@ -47,7 +46,6 @@
     // view supplies this (it owns vault access); the inspector renders the button.
     onExport: (doc: PflowDocument) => Promise<string>;
     registry: import("@perspecta/core").McpRegistry;
-    onMcpServer: (nodeId: string, server: string) => void;
   } = $props();
 
   let doc = $state<PflowDocument>(file);
@@ -125,11 +123,8 @@
     onChange(next);
   }
 
-  function handleMcpServer(nodeId: string, server: string) {
-    // applyMcpServer updates the doc; onChange (via commit) persists it in the view.
-    // onMcpServer is also called so the view can do any additional bookkeeping.
+  function onMcpServer(nodeId: string, server: string) {
     commit(applyMcpServer(doc, nodeId, server));
-    onMcpServer(nodeId, server);
   }
 
   function onMove(nodeId: string, x: number, y: number) {
@@ -272,7 +267,7 @@
       onExport={onExportCurrent}
       {registry}
       mcpWarnings={mcpNodeWarnings}
-      onMcpServer={handleMcpServer}
+      {onMcpServer}
     />
   </div>
 </div>

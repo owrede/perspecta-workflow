@@ -1,7 +1,7 @@
 import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { parsePflow, type PflowDocument } from "@perspecta/core";
-import { dedupeDuplicateNamedPorts, applyMcpServer } from "./flow-map.js";
+import { dedupeDuplicateNamedPorts } from "./flow-map.js";
 import { exportClaudeCodeWorkflowFile } from "../../commands/exportWorkflow.js";
 import Editor from "./editor.svelte";
 import type PerspectaWorkflowPlugin from "../../main.js";
@@ -83,11 +83,10 @@ export class PflowEditorView extends TextFileView {
         // codegen error propagate so the inspector can show it).
         onExport: (doc: PflowDocument) =>
           exportClaudeCodeWorkflowFile(this.app.vault.adapter, doc),
+        // NOTE (v1): snapshot of the registry at mount. If the user probes a
+        // server or changes permissions in Settings while this editor is open,
+        // the picker/grant-summary won't refresh until the file is reopened.
         registry: this.plugin.settings.mcpRegistry,
-        onMcpServer: (nodeId: string, server: string) => {
-          this.current = applyMcpServer(this.current!, nodeId, server);
-          this.requestSave();
-        },
       },
     });
   }

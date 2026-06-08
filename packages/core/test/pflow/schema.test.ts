@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PortSchemaZ } from "../../src/pflow/schema.js";
+import { PortSchemaZ, PflowNodeZ } from "../../src/pflow/schema.js";
 import { parsePflow, NODE_KINDS } from "../../src/pflow/schema.js";
 
 const MINIMAL = {
@@ -122,5 +122,23 @@ describe("mcp node kind", () => {
     }));
     expect(doc.nodes[0].kind).toBe("mcp");
     expect(doc.nodes[0].config?.mcpServer).toBe("figma");
+  });
+});
+
+describe("schema — eval kind", () => {
+  it("accepts an eval node with mode + blockOnFail config", () => {
+    const node = {
+      id: "ev",
+      kind: "eval",
+      label: "Quality gate",
+      prompt: "Evaluate {{in:candidate}}. Emit EVAL: pass or EVAL: fail. Route {{out:pass}}/{{out:fail}}.",
+      inputs: [{ id: "in:candidate", name: "candidate", schema: { type: "string" } }],
+      outputs: [
+        { id: "out:pass", name: "pass", schema: { type: "string" } },
+        { id: "out:fail", name: "fail", schema: { type: "string" } },
+      ],
+      config: { mode: "criteria", blockOnFail: false },
+    };
+    expect(PflowNodeZ.parse(node).kind).toBe("eval");
   });
 });

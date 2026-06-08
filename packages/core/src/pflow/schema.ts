@@ -23,7 +23,7 @@ export const PortSchemaZ: z.ZodType<PortSchema> = z.lazy(() =>
 export const NODE_KINDS = [
   "input", "output", "agent",
   "split", "join",
-  "loop", "verify", "synthesize", "branch",
+  "loop", "verify", "synthesize", "branch", "eval",
   "mcp",
   "script",
 ] as const;

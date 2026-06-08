@@ -133,6 +133,24 @@ describe("summarizeWorkflowResources", () => {
     const ghost = s.services.find((x) => x.server === "ghost")!;
     expect(ghost.available).toBe(false);
     expect(s.allMet).toBe(false);
+    expect(figma.ask).toBe(0);
+    expect(figma.blocked).toBe(0);
+    expect(ghost.allow).toBe(0);
+    expect(ghost.ask).toBe(0);
+    expect(ghost.blocked).toBe(0);
+  });
+  it("buckets an mcp node with no server under (none) as unavailable", () => {
+    const unconfigured = {
+      pflowFormatVersion: 1, workflow: { name: "w", description: "d" },
+      nodes: [{ id: "x", kind: "mcp", label: "X", inputs: [], outputs: [], config: {} }],
+      wires: [],
+    } as unknown as PflowDocument;
+    const s = summarizeWorkflowResources(unconfigured, {});
+    const none = s.services.find((x) => x.server === "(none)")!;
+    expect(none).toBeDefined();
+    expect(none.nodeCount).toBe(1);
+    expect(none.available).toBe(false);
+    expect(s.allMet).toBe(false);
   });
   it("reports allMet true when every used service is available", () => {
     const onlyFigma = { ...doc, nodes: doc.nodes.filter((n) => n.id !== "c") } as PflowDocument;

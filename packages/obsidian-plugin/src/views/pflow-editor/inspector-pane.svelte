@@ -194,7 +194,7 @@
             {/if}
           </p>
         {/each}
-        {#if !resourceSummary.allMet}
+        {#if !resourceSummary.allMet && resourceSummary.services.length > 1}
           <p class="pflow-insp__warn">⚠ Some services this workflow needs are not available in this vault.</p>
         {/if}
       {/if}

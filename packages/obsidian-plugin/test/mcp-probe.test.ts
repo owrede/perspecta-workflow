@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { probedToolsToRegistry } from "../src/mcp/probe.js";
+import { probedToolsToRegistry, NodeMcpProbe } from "../src/mcp/probe.js";
 
 describe("probedToolsToRegistry", () => {
   it("maps probed tools into registry tools with classified groups + ask default", () => {
@@ -14,5 +14,16 @@ describe("probedToolsToRegistry", () => {
     const reg = probedToolsToRegistry([{ name: "list_things" }]);
     expect(reg.list_things.groupSource).toBe("heuristic");
     expect(reg.list_things.group).toBe("read");
+  });
+});
+
+describe("NodeMcpProbe guards", () => {
+  it("rejects a non-stdio server without touching the SDK", async () => {
+    await expect(new NodeMcpProbe().probe({ name: "x", transport: "http", url: "http://localhost" }))
+      .rejects.toThrow("Only stdio");
+  });
+  it("rejects a stdio server with no command", async () => {
+    await expect(new NodeMcpProbe().probe({ name: "y", transport: "stdio" }))
+      .rejects.toThrow("no command");
   });
 });

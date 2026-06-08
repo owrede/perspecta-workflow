@@ -1,5 +1,10 @@
 import { buildWorkflowArtifacts, type PflowDocument, type McpRegistry } from "@perspecta/core";
 
+/** " + N connector agent(s)" suffix for export notices, properly pluralized. */
+export function formatConnectorSuffix(count: number): string {
+  return count ? ` + ${count} connector agent${count === 1 ? "" : "s"}` : "";
+}
+
 /** The slice of Obsidian's vault adapter this helper needs. Declared structurally
  *  so the function is unit-testable with a fake and reusable from both the plugin
  *  command (main.ts) and the editor view (view.ts) without importing Obsidian. */

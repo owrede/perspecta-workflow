@@ -2,7 +2,7 @@ import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { parsePflow, type PflowDocument } from "@perspecta/core";
 import { dedupeDuplicateNamedPorts, applyMcpExpectedGrants } from "./flow-map.js";
-import { exportClaudeCodeWorkflowFile } from "../../commands/exportWorkflow.js";
+import { exportClaudeCodeWorkflowFile, formatConnectorSuffix } from "../../commands/exportWorkflow.js";
 import Editor from "./editor.svelte";
 import type PerspectaWorkflowPlugin from "../../main.js";
 
@@ -22,6 +22,13 @@ export class PflowEditorView extends TextFileView {
 
   /** The current document, or null when no valid document is loaded. */
   getDocument(): PflowDocument | null { return this.current; }
+
+  /** Replace the current document and request a save (used by the palette export
+   *  to persist the expectedGrants stamp). */
+  setDocument(doc: PflowDocument): void {
+    this.current = doc;
+    this.requestSave();
+  }
 
   setViewData(data: string, clear: boolean): void {
     if (clear) this.clear();
@@ -88,8 +95,7 @@ export class PflowEditorView extends TextFileView {
           this.current = stamped;
           this.requestSave();
           const res = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, stamped, this.plugin.settings.mcpRegistry);
-          const extra = res.subagentPaths.length ? ` + ${res.subagentPaths.length} connector agent${res.subagentPaths.length === 1 ? "" : "s"}` : "";
-          return `${res.workflowPath}${extra}`;
+          return `${res.workflowPath}${formatConnectorSuffix(res.subagentPaths.length)}`;
         },
         // NOTE (v1): snapshot of the registry at mount. If the user probes a
         // server or changes permissions in Settings while this editor is open,

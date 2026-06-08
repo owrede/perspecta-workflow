@@ -11,8 +11,9 @@ import { ColorWatcher } from "./live/colorWatcher.js";
 import { attachNodeMenu } from "./live/nodeMenu.js";
 import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
-import { exportClaudeCodeWorkflowFile } from "./commands/exportWorkflow.js";
+import { exportClaudeCodeWorkflowFile, formatConnectorSuffix } from "./commands/exportWorkflow.js";
 import { PflowEditorView, VIEW_TYPE_PFLOW } from "./views/pflow-editor/view.js";
+import { applyMcpExpectedGrants } from "./views/pflow-editor/flow-map.js";
 import { parseMcpJsonServers } from "./mcp/mcpJson.js";
 import { NodeMcpProbe, probedToolsToRegistry } from "./mcp/probe.js";
 
@@ -134,9 +135,13 @@ export default class PerspectaWorkflowPlugin extends Plugin {
    *  per MCP node. Shared with the editor's inspector Export button. */
   private async exportClaudeCodeWorkflow(doc: PflowDocument): Promise<void> {
     try {
-      const res = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, doc, this.settings.mcpRegistry);
-      const extra = res.subagentPaths.length ? ` + ${res.subagentPaths.length} connector agent(s)` : "";
-      new Notice(`Perspecta Workflow: exported ${res.workflowPath}${extra}`);
+      const stamped = applyMcpExpectedGrants(doc, this.settings.mcpRegistry);
+      // If this doc is the active pflow editor's document, persist the stamp so
+      // the .pflow records the snapshot the import-warning compares against.
+      const view = this.app.workspace.getActiveViewOfType(PflowEditorView);
+      if (view?.getDocument() === doc) view.setDocument(stamped);
+      const res = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, stamped, this.settings.mcpRegistry);
+      new Notice(`Perspecta Workflow: exported ${res.workflowPath}${formatConnectorSuffix(res.subagentPaths.length)}`);
     } catch (e) {
       new Notice(`Perspecta Workflow: export failed — ${(e as Error).message}`);
     }

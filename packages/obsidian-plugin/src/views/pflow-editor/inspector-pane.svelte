@@ -274,6 +274,7 @@
         <p class="pflow-insp__help">The evaluation strategy. Changing it swaps the prompt for the mode's template (you'll be asked before an existing prompt is replaced).</p>
         <select
           class="pflow-insp__input pflow-insp__select"
+          aria-label="Evaluation mode"
           value={node.data.evalMode ?? "criteria"}
           onchange={(e) =>
             onEvalMode(

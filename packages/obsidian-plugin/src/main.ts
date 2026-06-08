@@ -1,5 +1,5 @@
 import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile, FileSystemAdapter } from "obsidian";
-import { VERSION, isWorkflowCanvas, type NodeType, type PflowDocument } from "@perspecta/core";
+import { VERSION, isWorkflowCanvas, DEFAULT_GROUP_DEFAULTS, type NodeType, type PflowDocument } from "@perspecta/core";
 import { PERSPECTA_UI_VERSION, PerspectaSettingsStore, CornerBadge } from "perspecta-ui";
 import { WorkflowSkillSyncService } from "./skills/WorkflowSkillSyncService.js";
 import { ResultsView, VIEW_TYPE_PERSPECTA } from "./view/ResultsView.js";
@@ -124,8 +124,9 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     // Preserve the last good tool list across a probing/failed cycle, so a
     // transient probe failure doesn't wipe a previously-hot server's tools.
     const prevTools = this.settings.mcpRegistry[name]?.tools ?? {};
+    const prevDefaults = this.settings.mcpRegistry[name]?.groupDefaults ?? DEFAULT_GROUP_DEFAULTS;
     const reg = { ...this.settings.mcpRegistry };
-    reg[name] = { whitelisted: true, probe: { status: "probing" }, tools: prevTools };
+    reg[name] = { whitelisted: true, groupDefaults: prevDefaults, probe: { status: "probing" }, tools: prevTools };
     this.settings.mcpRegistry = reg;
     await this.saveSettings();
     // Note: concurrent probes of the same server (rare for a manual settings
@@ -136,9 +137,9 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       const probe = await this.pluginArtifactAbsPath(MCP_PROBE_ARTIFACT);
       if ("reason" in probe) throw new Error(probe.reason);
       const tools = await new NodeMcpProbe(probe.absPath).probe(server);
-      reg[name] = { whitelisted: true, probe: { status: "hot", probedAt: new Date().toISOString() }, tools: probedToolsToRegistry(tools) };
+      reg[name] = { whitelisted: true, groupDefaults: prevDefaults, probe: { status: "hot", probedAt: new Date().toISOString() }, tools: probedToolsToRegistry(tools) };
     } catch (e) {
-      reg[name] = { whitelisted: true, probe: { status: "failed", error: (e as Error).message }, tools: prevTools };
+      reg[name] = { whitelisted: true, groupDefaults: prevDefaults, probe: { status: "failed", error: (e as Error).message }, tools: prevTools };
     }
     this.settings.mcpRegistry = { ...reg };
     await this.saveSettings();

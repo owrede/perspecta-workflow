@@ -26,8 +26,8 @@ export interface McpRegistryServer {
 
 export type McpRegistry = Record<string, McpRegistryServer>;
 
-const READ_VERBS = /^(get|list|search|read|fetch|describe|view|find|query|show)\b|_?(get|list|search|read|fetch|describe|view)/i;
-const WRITE_VERBS = /^(create|update|delete|write|set|add|remove|put|post|patch|insert|upsert|send|move|rename)\b/i;
+const READ_VERBS = /^(get|list|search|read|fetch|describe|view|find|query|show)(_|$)|_(get|list|search|read|fetch|describe|view)(_|$)/i;
+const WRITE_VERBS = /^(create|update|delete|write|set|add|remove|put|post|patch|insert|upsert|send|move|rename)(_|$)/i;
 
 /** Classify a tool into read/write: annotations win; else a name/verb heuristic;
  *  unknown → write (the safe side). Pure. */

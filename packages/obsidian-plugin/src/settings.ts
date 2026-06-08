@@ -111,11 +111,18 @@ export class PerspectaSettingTab extends PluginSettingTab {
     row.addButton((btn) => {
       btn.setButtonText("Copy setup prompt");
       if ("reason" in setup) {
-        btn.setDisabled(true);
+        btn.setDisabled(true).setTooltip(setup.reason);
       } else {
         btn.setCta().onClick(async () => {
-          await navigator.clipboard.writeText(setup.prompt);
-          new Notice("Setup prompt copied — paste it into your coding agent running in this vault.");
+          // clipboard.writeText can reject (denied permission, Electron quirks);
+          // the framework does not await this handler, so catch it ourselves and
+          // surface the failure rather than leaving an unhandled rejection.
+          try {
+            await navigator.clipboard.writeText(setup.prompt);
+            new Notice("Setup prompt copied — paste it into your coding agent running in this vault.");
+          } catch {
+            new Notice("Perspecta Workflow: could not write to clipboard.");
+          }
         });
       }
     });

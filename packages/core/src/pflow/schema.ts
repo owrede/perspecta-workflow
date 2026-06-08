@@ -23,7 +23,7 @@ export const PortSchemaZ: z.ZodType<PortSchema> = z.lazy(() =>
 export const NODE_KINDS = [
   "input", "output", "agent",
   "split", "join",
-  "loop", "verify", "synthesize", "branch",
+  "loop", "verify", "synthesize", "branch", "eval",
   "mcp",
   "script",
 ] as const;
@@ -84,6 +84,10 @@ export const PflowDocumentZ = z.object({
       inspectorWidth: z.number().optional(),
     })
     .optional(),
+  // Opaque block owned by perspecta-obsidian (spatial-workspace arrangements).
+  // perspecta-workflow neither reads nor writes it; it only round-trips the
+  // block so an attached arrangement survives editor saves.
+  perspecta: z.unknown().optional(),
 });
 export type PflowDocument = z.infer<typeof PflowDocumentZ>;
 

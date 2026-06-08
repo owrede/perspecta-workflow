@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MarkerType } from "@xyflow/system";
-import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit, applyDropConnect } from "../src/views/pflow-editor/flow-map.js";
+import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit, applyDropConnect, applyEvalMode, applyEvalModeFlagOnly, applyBlockOnFail } from "../src/views/pflow-editor/flow-map.js";
+import { templateForMode } from "../src/views/pflow-editor/eval-templates.js";
 import type { PflowDocument } from "@perspecta/core";
 
 const DOC: PflowDocument = {
@@ -200,9 +201,14 @@ describe("defaultPortsForKind", () => {
 });
 
 describe("COMPILABLE_KINDS", () => {
-  it("is all eleven kinds now that codegen supports every kind", () => {
+  // The expected list is HARDCODED on purpose, NOT `[...NODE_KINDS]`. This is a
+  // tripwire: adding a node kind must force a conscious edit here to confirm
+  // codegen actually compiles it. If a future kind is NOT yet compilable,
+  // COMPILABLE_KINDS will intentionally diverge from NODE_KINDS, and this test is
+  // where that decision is recorded. Do NOT "simplify" to `[...NODE_KINDS]`.
+  it("is all twelve kinds now that codegen supports every kind", () => {
     expect(COMPILABLE_KINDS).toEqual([
-      "input", "output", "agent", "split", "join", "loop", "verify", "synthesize", "branch", "mcp", "script",
+      "input", "output", "agent", "split", "join", "loop", "verify", "synthesize", "branch", "eval", "mcp", "script",
     ]);
   });
 });
@@ -651,5 +657,54 @@ describe("applyDropConnect (drag a connector onto a card)", () => {
     const before = JSON.stringify(D);
     applyDropConnect(D, "ag", "out:notes", "source", "end");
     expect(JSON.stringify(D)).toBe(before);
+  });
+});
+
+describe("flow-map — eval transforms", () => {
+  const baseDoc = {
+    pflowFormatVersion: 1 as const,
+    workflow: { name: "wf", description: "" },
+    nodes: [
+      { id: "ev", kind: "eval" as const, label: "Gate", prompt: "",
+        inputs: [], outputs: [], config: { mode: "criteria" } },
+    ],
+    wires: [],
+  };
+
+  it("applyEvalMode sets the template, mode, and derives candidate+pass+fail ports", () => {
+    const next = applyEvalMode(baseDoc, "ev", "comparison");
+    const node = next.nodes.find((n) => n.id === "ev")!;
+    expect(node.prompt).toBe(templateForMode("comparison"));
+    expect(node.config?.mode).toBe("comparison");
+    expect(node.inputs.map((p) => p.name).sort()).toEqual(["candidate", "reference"]);
+    expect(node.outputs.map((p) => p.name).sort()).toEqual(["fail", "pass"]);
+  });
+
+  it("applyEvalModeFlagOnly records mode without touching the prompt", () => {
+    const edited = { ...baseDoc, nodes: [{ ...baseDoc.nodes[0], prompt: "my hand-written eval" }] };
+    const next = applyEvalModeFlagOnly(edited, "ev", "threshold");
+    const node = next.nodes.find((n) => n.id === "ev")!;
+    expect(node.prompt).toBe("my hand-written eval");
+    expect(node.config?.mode).toBe("threshold");
+  });
+
+  it("applyBlockOnFail flips only the blockOnFail flag", () => {
+    const next = applyBlockOnFail(baseDoc, "ev", true);
+    const node = next.nodes.find((n) => n.id === "ev")!;
+    expect(node.config?.blockOnFail).toBe(true);
+    expect(node.config?.mode).toBe("criteria");
+  });
+});
+
+describe("flow-map — add eval node defaults", () => {
+  it("a new eval node arrives with the criteria template, mode, and pass/fail ports", () => {
+    const doc = { pflowFormatVersion: 1 as const, workflow: { name: "wf", description: "" }, nodes: [], wires: [] };
+    const next = applyAddNode(doc, "eval", "New eval", 0, 0);
+    const node = next.nodes[next.nodes.length - 1];
+    expect(node.kind).toBe("eval");
+    expect(node.config?.mode).toBe("criteria");
+    expect(node.prompt).toContain("EVAL: pass");
+    expect(node.outputs.map((p) => p.name).sort()).toEqual(["fail", "pass"]);
+    expect(node.inputs.map((p) => p.name)).toEqual(["candidate"]);
   });
 });

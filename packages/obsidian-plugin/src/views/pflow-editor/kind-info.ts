@@ -71,6 +71,12 @@ export const KIND_INFO: Record<NodeKind, KindInfo> = {
     title: "Branch",
     description: "Routes to one of several paths based on an LLM decision.",
   },
+  eval: {
+    icon: "M20 13c0 5-3.5 7.5-7.7 8.95a1 1 0 0 1-.6.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z M9 12l2 2 4-4",
+    color: "var(--color-cyan, #2e9bd9)",
+    title: "Eval",
+    description: "Judges its input and gates the flow: pass/fail ports, with an optional hard stop.",
+  },
   mcp: {
     icon: "M9 2v6 M15 2v6 M6 8h12v3a6 6 0 0 1-12 0V8Z M12 17v5",
     color: "var(--color-blue, #3b82f6)",
@@ -96,4 +102,4 @@ export function colorForKind(kind: string): string {
 }
 
 /** Kinds that carry a free-text prompt (so the inspector shows a Prompt field). */
-export const PROMPT_KINDS: NodeKind[] = ["agent", "verify", "synthesize", "loop", "branch", "mcp"];
+export const PROMPT_KINDS: NodeKind[] = ["agent", "verify", "synthesize", "loop", "branch", "eval", "mcp"];

@@ -50,6 +50,8 @@
     registry,
     mcpWarnings,
     onMcpServer,
+    onEvalMode,
+    onBlockOnFail,
     resourceSummary,
   }: {
     node: { id: string; data: FlowNodeData } | null;
@@ -71,6 +73,8 @@
     registry: import("@perspecta/core").McpRegistry;
     mcpWarnings: PflowError[];
     onMcpServer: (nodeId: string, server: string) => void;
+    onEvalMode: (nodeId: string, mode: import("./eval-templates.js").EvalMode) => void;
+    onBlockOnFail: (nodeId: string, value: boolean) => void;
     resourceSummary: import("@perspecta/core").WorkflowResourceSummary;
   } = $props();
 
@@ -261,6 +265,35 @@
         {#each nodeWarnings as w}
           <p class="pflow-insp__warn">⚠ {w.message}</p>
         {/each}
+      </section>
+    {/if}
+
+    {#if node.data.kind === "eval"}
+      <section class="pflow-insp__section">
+        <h3 class="pflow-insp__section-title">Mode</h3>
+        <p class="pflow-insp__help">The evaluation strategy. Changing it swaps the prompt for the mode's template (you'll be asked before an existing prompt is replaced).</p>
+        <select
+          class="pflow-insp__input pflow-insp__select"
+          aria-label="Evaluation mode"
+          value={node.data.evalMode ?? "criteria"}
+          onchange={(e) =>
+            onEvalMode(
+              node!.id,
+              (e.currentTarget as HTMLSelectElement).value as import("./eval-templates.js").EvalMode,
+            )}
+        >
+          <option value="criteria">criteria — vs a rubric</option>
+          <option value="comparison">comparison — vs a reference</option>
+          <option value="threshold">threshold — score vs a bound</option>
+        </select>
+        <label class="pflow-insp__checkbox">
+          <input
+            type="checkbox"
+            checked={node.data.blockOnFail === true}
+            onchange={(e) => onBlockOnFail(node!.id, (e.currentTarget as HTMLInputElement).checked)}
+          />
+          Block on fail (halt the run on a failed verdict)
+        </label>
       </section>
     {/if}
 
@@ -530,6 +563,19 @@
     color: var(--text-faint);
     font-size: var(--font-ui-smaller);
     font-style: italic;
+  }
+  .pflow-insp__checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-2);
+    margin-top: var(--size-2-3);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-normal);
+    cursor: pointer;
+  }
+  .pflow-insp__checkbox input {
+    margin: 0;
+    cursor: pointer;
   }
 
   /* ── Form controls ── */

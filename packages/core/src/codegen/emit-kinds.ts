@@ -106,7 +106,11 @@ export function emitBranchRegion(doc: PflowDocument, region: BranchRegion, emitO
   const branch = nodeById(doc, region.entryId)!;
   const choiceVar = varName(doc, branch);
   const labels = region.paths.map((p) => p.label).join("|");
-  const call = buildAgentCall(doc, branch, `Choose exactly ONE path and emit a line: BRANCH: <one of ${labels}>`);
+  const instruction =
+    region.verb === "EVAL"
+      ? `Emit a verdict line exactly: EVAL: pass  OR  EVAL: fail`
+      : `Choose exactly ONE path and emit a line: BRANCH: <one of ${labels}>`;
+  const call = buildAgentCall(doc, branch, instruction);
 
   const reconverges = region.reconverges.length > 0;
   const resultVar = branchResultVar(doc, branch);
@@ -116,7 +120,7 @@ export function emitBranchRegion(doc: PflowDocument, region: BranchRegion, emitO
   const passthrough = branchInWire ? sourceExpr(doc, branchInWire) : '""';
 
   const arms = region.paths.map((p, i) => {
-    const cond = `/BRANCH:\\s*${p.label}/i.test(String(${choiceVar}))`;
+    const cond = `/${region.verb}:\\s*${p.label}/i.test(String(${choiceVar}))`;
     const pieces = p.memberIds
       .map((id) => emitOne(doc, nodeById(doc, id)!))
       .filter((s) => s.length > 0)
@@ -130,5 +134,17 @@ export function emitBranchRegion(doc: PflowDocument, region: BranchRegion, emitO
   });
 
   const decl = reconverges ? [`  let ${resultVar};`] : [];
-  return [...decl, `  const ${choiceVar} = ${call};`, ...arms, `  }`].join("\n");
+  // EVAL verdict is always logged (like a verify node), so a trace of the
+  // gate decision exists even when neither pass/fail port is wired. Branch
+  // nodes do NOT log here — their choice flows into the dispatch arms and a
+  // bare BRANCH: line carries no standalone meaning.
+  const verdictLog = region.verb === "EVAL" ? [`  log(${choiceVar});`] : [];
+  // Hard quality gate (eval blockOnFail): a `fail` verdict throws BEFORE the
+  // dispatch arms run, so any nodes wired onto the fail arm are intentionally
+  // superseded — a failed gate aborts everything downstream. The EVAL verdict
+  // vocabulary is pass/fail by the eval node's output-port contract.
+  const gate = region.blockOnFail
+    ? [`  if (/${region.verb}:\\s*fail/i.test(String(${choiceVar}))) throw new Error(${jsString(`Quality gate failed: ${branch.label}`)});`]
+    : [];
+  return [...decl, `  const ${choiceVar} = ${call};`, ...verdictLog, ...gate, ...arms, `  }`].join("\n");
 }

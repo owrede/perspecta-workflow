@@ -2,6 +2,7 @@ import { MarkerType } from "@xyflow/system";
 import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants, snapshotGrants } from "@perspecta/core";
 import type { TokenPort, TokenType, McpRegistry } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
+import { templateForMode, DEFAULT_EVAL_MODE, type EvalMode } from "./eval-templates.js";
 
 /** A port as rendered on the canvas: the persisted Port plus `wired` — whether
  *  any wire touches this port. The node fills a port's dot when it is wired
@@ -14,6 +15,10 @@ export interface FlowNodeData {
   label: string;
   prompt?: string;
   mcpServer?: string;
+  /** Eval node mode (config.mode), surfaced for the inspector's mode picker. */
+  evalMode?: string;
+  /** Eval node block-on-fail flag (config.blockOnFail), surfaced for the toggle. */
+  blockOnFail?: boolean;
   inputs: RenderPort[];
   outputs: RenderPort[];
 }
@@ -81,6 +86,8 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
         label: n.label,
         prompt: n.prompt,
         mcpServer: n.config?.mcpServer as string | undefined,
+        evalMode: n.config?.mode as string | undefined,
+        blockOnFail: n.config?.blockOnFail === true,
         inputs: n.inputs.map(markWired(wiredIn)),
         outputs: n.outputs.map(markWired(wiredOut)),
       },
@@ -592,11 +599,16 @@ export function applyAddNode(
   const { inputs, outputs } = defaultPortsForKind(kind);
   const node: PflowNode = { id, kind, label, inputs, outputs };
   const editor = doc.editor ?? { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] };
-  return {
+  const next: PflowDocument = {
     ...doc,
     nodes: [...doc.nodes, node],
     editor: { ...editor, nodePositions: [...editor.nodePositions, { nodeId: id, x, y }] },
   };
+  // An eval node arrives usable: pre-fill the default mode's template and derive
+  // its pass/fail + candidate ports. Routed through DEFAULT_EVAL_MODE so
+  // eval-templates.ts stays the single source of truth for the default.
+  if (kind === "eval") return applyEvalMode(next, id, DEFAULT_EVAL_MODE);
+  return next;
 }
 
 /** Remove a node plus every wire touching it and its saved position. Immutable. */
@@ -641,6 +653,42 @@ export function applyMcpServer(doc: PflowDocument, nodeId: string, server: strin
       const { mcpServer: _omit, ...rest } = n.config ?? {};
       return { ...n, config: server ? { ...rest, mcpServer: server } : rest };
     }),
+  };
+}
+
+/** Switch an eval node's mode: replace its prompt with the mode's template and
+ *  re-derive ports from the template's tokens (same mechanism as a prompt edit).
+ *  Also records `config.mode`. The caller confirms an overwrite of a non-empty
+ *  prompt before calling this. */
+export function applyEvalMode(doc: PflowDocument, nodeId: string, mode: EvalMode): PflowDocument {
+  const withPromptAndPorts = applyPromptAndDerivePorts(doc, nodeId, templateForMode(mode));
+  return {
+    ...withPromptAndPorts,
+    nodes: withPromptAndPorts.nodes.map((n) =>
+      n.id === nodeId ? { ...n, config: { ...n.config, mode } } : n,
+    ),
+  };
+}
+
+/** Record an eval node's mode WITHOUT changing its prompt (used when the user
+ *  declines the template-overwrite confirm). The resulting prompt/mode mismatch
+ *  is flagged later by the deferred check-workflow lint. */
+export function applyEvalModeFlagOnly(doc: PflowDocument, nodeId: string, mode: EvalMode): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) =>
+      n.id === nodeId ? { ...n, config: { ...n.config, mode } } : n,
+    ),
+  };
+}
+
+/** Toggle an eval node's hard quality gate (throw on a `fail` verdict). */
+export function applyBlockOnFail(doc: PflowDocument, nodeId: string, value: boolean): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) =>
+      n.id === nodeId ? { ...n, config: { ...n.config, blockOnFail: value } } : n,
+    ),
   };
 }
 

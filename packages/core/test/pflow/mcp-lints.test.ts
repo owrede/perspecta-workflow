@@ -49,4 +49,26 @@ describe("mcpLints", () => {
     } as unknown as PflowDocument;
     expect(mcpLints(doc, {})).toEqual([]);
   });
+  it("reports a failed probe with its error in the cold lint message", () => {
+    const reg: McpRegistry = { figma: { whitelisted: true, probe: { status: "failed", error: "spawn ENOENT" }, tools: {} } };
+    const errs = mcpLints(docWith({ mcpServer: "figma" }), reg);
+    const cold = errs.find((e) => e.rule === "mcp-server-cold");
+    expect(cold).toBeDefined();
+    expect(cold!.message).toContain("probe failed");
+    expect(cold!.message).toContain("spawn ENOENT");
+  });
+  it("accumulates lints independently across multiple mcp nodes", () => {
+    const doc = {
+      pflowFormatVersion: 1, workflow: { name: "w", description: "d" },
+      nodes: [
+        { id: "a", kind: "mcp", label: "A", prompt: "p", inputs: [], outputs: [], config: {} },                 // missing
+        { id: "b", kind: "mcp", label: "B", prompt: "p", inputs: [], outputs: [], config: { mcpServer: "figma" } }, // ok
+      ],
+      wires: [],
+    } as unknown as PflowDocument;
+    const reg: McpRegistry = { figma: { whitelisted: true, probe: { status: "hot" }, tools: {} } };
+    const errs = mcpLints(doc, reg);
+    expect(errs.map((e) => e.rule)).toEqual(["mcp-server-missing"]); // only node a flagged; node b clean
+    expect(errs[0].nodeId).toBe("a");
+  });
 });

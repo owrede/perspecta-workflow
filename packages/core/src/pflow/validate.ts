@@ -131,13 +131,20 @@ export function mcpLints(doc: PflowDocument, registry: McpRegistry): PflowError[
       continue;
     }
     if (reg.probe.status !== "hot") {
-      errors.push({ rule: "mcp-server-cold", message: `MCP node ${node.id}: service "${server}" is whitelisted but not probed`, nodeId: node.id });
+      const status = reg.probe.status;
+      const detail =
+        status === "failed"
+          ? `probe failed${reg.probe.error ? `: ${reg.probe.error}` : ""}`
+          : status === "probing"
+            ? "probe in progress"
+            : "not yet probed";
+      errors.push({ rule: "mcp-server-cold", message: `MCP node ${node.id}: service "${server}" is whitelisted but unavailable (${detail})`, nodeId: node.id });
     }
     const expected = node.config?.expectedGrants as Record<string, "blocked" | "ask" | "allow"> | undefined;
     if (expected && reg.probe.status === "hot") {
       const stricter = isPolicyStricter(expected, reg);
       if (stricter.length) {
-        errors.push({ rule: "mcp-policy-stricter", message: `MCP node ${node.id}: this vault is stricter than expected for ${server}.${stricter.join(", ")}`, nodeId: node.id });
+        errors.push({ rule: "mcp-policy-stricter", message: `MCP node ${node.id}: vault policy is stricter than expected for "${server}" — affected tools: ${stricter.join(", ")}`, nodeId: node.id });
       }
     }
   }

@@ -24,6 +24,7 @@ export const NODE_KINDS = [
   "input", "output", "agent",
   "split", "join",
   "loop", "verify", "synthesize", "branch",
+  "mcp",
   "script",
 ] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];

@@ -102,3 +102,25 @@ describe("editor.inspectorWidth", () => {
     expect(doc.editor!.inspectorWidth).toBeUndefined();
   });
 });
+
+describe("mcp node kind", () => {
+  it("includes 'mcp' in the kind vocabulary", () => {
+    expect(NODE_KINDS).toContain("mcp");
+  });
+  it("parses an mcp node with config.mcpServer + expectedGrants", () => {
+    const doc = parsePflow(JSON.stringify({
+      pflowFormatVersion: 1,
+      workflow: { name: "w", description: "d" },
+      nodes: [{
+        id: "fig", kind: "mcp", label: "Fetch design",
+        prompt: "Use figma to fetch {{in:url}}; return {{out:design}}.",
+        inputs: [{ id: "in:url", name: "url", schema: { type: "string" } }],
+        outputs: [{ id: "out:design", name: "design", schema: { type: "string" } }],
+        config: { mcpServer: "figma", expectedGrants: { get_design: "allow" } },
+      }],
+      wires: [],
+    }));
+    expect(doc.nodes[0].kind).toBe("mcp");
+    expect(doc.nodes[0].config?.mcpServer).toBe("figma");
+  });
+});

@@ -51,10 +51,16 @@ describe("resolveServerGrants", () => {
 });
 
 describe("applyGroupPermission", () => {
-  it("blocking the write group makes the server read-only", () => {
-    const next = applyGroupPermission(server, "write", "blocked");
-    expect(next.tools.create_file.permission).toBe("blocked");
-    expect(next.tools.get_design.permission).toBe("allow");
-    expect(server.tools.create_file.permission).toBe("blocked"); // input unchanged (immutable)
+  it("sets every tool in a group to the new permission (returns a new server)", () => {
+    // create_file starts "blocked"; apply "allow" to the write group → it flips.
+    const next = applyGroupPermission(server, "write", "allow");
+    expect(next.tools.create_file.permission).toBe("allow"); // write tool changed
+    expect(next.tools.get_design.permission).toBe("allow");   // read tool untouched
+    expect(next.tools.get_screenshot.permission).toBe("ask"); // read tool untouched
+  });
+  it("does not mutate the input server (immutable)", () => {
+    // Applying a DIFFERENT permission than the fixture has must leave the input intact.
+    applyGroupPermission(server, "write", "allow");
+    expect(server.tools.create_file.permission).toBe("blocked"); // original preserved
   });
 });

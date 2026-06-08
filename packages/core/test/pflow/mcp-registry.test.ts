@@ -63,6 +63,9 @@ describe("resolveToolPermission", () => {
     expect(resolveToolPermission(s, "follows")).toBe("allow");
     expect(resolveToolPermission(s, "writish")).toBe("blocked");
   });
+  it("returns 'blocked' (strictest) for an unknown tool name", () => {
+    expect(resolveToolPermission(s, "no_such_tool")).toBe("blocked");
+  });
 });
 
 const server: McpRegistryServer = {

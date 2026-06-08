@@ -32,6 +32,10 @@ export interface McpRegistryServer {
 
 export type McpRegistry = Record<string, McpRegistryServer>;
 
+/** A freshly probed server defaults EVERY group to "ask" (not "allow" for reads):
+ *  the safe baseline is to confirm each tool until the user opts a group into
+ *  always-allow. Also the read-side fallback for a registry saved before
+ *  groupDefaults existed. */
 export const DEFAULT_GROUP_DEFAULTS: Record<McpToolGroup, McpToolPermission> = {
   read: "ask", interactive: "ask", write: "ask",
 };

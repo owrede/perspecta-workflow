@@ -7,6 +7,7 @@ import {
   wiredText,
   wiredToggle,
 } from "perspecta-ui";
+import type { McpRegistry } from "@perspecta/core";
 import type PerspectaWorkflowPlugin from "./main.js";
 import { bundledSkillWrites } from "./skills/bundledSkills.js";
 import { CHANGELOG } from "./changelog.generated.js";
@@ -14,11 +15,13 @@ import { CHANGELOG } from "./changelog.generated.js";
 export interface PerspectaSettings {
   nodeFolder: string;
   autoColor: boolean;
+  mcpRegistry: McpRegistry;
 }
 
 export const DEFAULT_SETTINGS: PerspectaSettings = {
   nodeFolder: "workflows",
   autoColor: true,
+  mcpRegistry: {},
 };
 
 export class PerspectaSettingTab extends PluginSettingTab {

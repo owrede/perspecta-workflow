@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { mcpSubagentMarkdown, generateClaudeCodeWorkflow } from "../../src/codegen/scriptgen.js";
-import type { McpRegistryServer } from "../../src/pflow/mcp-registry.js";
+import { mcpSubagentMarkdown, generateClaudeCodeWorkflow, buildWorkflowArtifacts } from "../../src/codegen/scriptgen.js";
+import type { McpRegistryServer, McpRegistry } from "../../src/pflow/mcp-registry.js";
 import { parsePflow } from "../../src/pflow/schema.js";
 
 const figma: McpRegistryServer = {
@@ -159,5 +159,30 @@ describe("mcp node downstream of branch (reconvergence)", () => {
     const runEmitted = new Function("agent", "args", `return (async () => { ${body} })();`);
     // stub: branch returns a path marker; agent/mcp return a value. Should not throw.
     await expect(runEmitted(async () => "RESULT", { topic: "t" })).resolves.toBeDefined();
+  });
+});
+
+const reg: McpRegistry = { figma: { whitelisted: true, probe: { status: "hot" }, tools: {
+  get_design: { group: "read", groupSource: "heuristic", permission: "allow" },
+} } };
+
+describe("buildWorkflowArtifacts", () => {
+  it("returns the js plus one subagent file per mcp node", () => {
+    // DOC is the linear input→mcp(figma)→output doc defined earlier in this file
+    // (workflow name "wf", mcp node id "fig"). Reuse it.
+    const out = buildWorkflowArtifacts(DOC, reg);
+    expect(out.workflowJs).toContain("export const meta");
+    expect(out.subagents).toHaveLength(1);
+    expect(out.subagents[0].path).toBe(".claude/agents/wf-fig.md");
+    expect(out.subagents[0].content).toContain("mcp__figma__get_design");
+  });
+  it("returns no subagents for a doc with no mcp nodes", () => {
+    const plain = parsePflow(JSON.stringify({
+      pflowFormatVersion: 1, workflow: { name: "p", description: "d" },
+      nodes: [{ id: "in", kind: "input", label: "I", inputs: [], outputs: [{ id: "o", name: "o", schema: { type: "string" } }] },
+               { id: "end", kind: "output", label: "O", inputs: [{ id: "in", name: "o", schema: { type: "string" }, required: true }], outputs: [] }],
+      wires: [{ from: { nodeId: "in", portId: "o" }, to: { nodeId: "end", portId: "in" } }],
+    }));
+    expect(buildWorkflowArtifacts(plain, {}).subagents).toEqual([]);
   });
 });

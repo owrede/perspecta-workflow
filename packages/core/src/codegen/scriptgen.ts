@@ -11,7 +11,7 @@ import {
   emitSplitJoinRegion,
   emitBranchRegion,
 } from "./emit-kinds.js";
-import type { McpRegistryServer } from "../pflow/mcp-registry.js";
+import type { McpRegistryServer, McpRegistry } from "../pflow/mcp-registry.js";
 import { resolveServerGrants } from "../pflow/mcp-registry.js";
 
 /** JSON.stringify yields a spec-compliant double-quoted JS string literal with
@@ -445,4 +445,28 @@ export function generateClaudeCodeWorkflow(doc: PflowDocument): string {
     throw new Error(`emit-lint failed (non-deterministic or sandbox-illegal output):\n${msg}`);
   }
   return code;
+}
+
+export interface WorkflowArtifacts {
+  workflowJs: string;
+  subagents: { path: string; content: string }[];
+}
+
+/** Build ALL artifacts for a workflow: the .js plus one .claude/agents/<name>.md
+ *  per MCP node, granting that node's server per the registry. A node whose
+ *  server is absent from the registry gets a minimal grant (server only). Pure;
+ *  the caller performs the writes. */
+export function buildWorkflowArtifacts(doc: PflowDocument, registry: McpRegistry): WorkflowArtifacts {
+  const workflowJs = generateClaudeCodeWorkflow(doc);
+  const subagents: { path: string; content: string }[] = [];
+  for (const node of doc.nodes) {
+    if (node.kind !== "mcp") continue;
+    const server = (node.config?.mcpServer as string | undefined) ?? "";
+    if (!server) continue; // mcp-server-missing is a blocking lint handled upstream
+    const name = mcpAgentTypeName(doc, node);
+    const serverReg: McpRegistryServer = registry[server] ?? { whitelisted: false, probe: { status: "cold" }, tools: {} };
+    const content = mcpSubagentMarkdown(name, server, serverReg, node.label || node.id);
+    subagents.push({ path: `.claude/agents/${name}.md`, content });
+  }
+  return { workflowJs, subagents };
 }

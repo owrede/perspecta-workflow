@@ -14,7 +14,7 @@ export function parseMcpJsonServers(text: string): McpJsonServer[] {
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return []; }
   const servers = (raw as { mcpServers?: Record<string, Record<string, unknown>> })?.mcpServers;
-  if (!servers || typeof servers !== "object") return [];
+  if (!servers || typeof servers !== "object" || Array.isArray(servers)) return [];
   return Object.entries(servers).map(([name, cfg]) => {
     const t = (cfg.type as string) ?? (cfg.command ? "stdio" : cfg.url ? "http" : "unknown");
     const transport = (["stdio", "http", "sse", "ws"].includes(t) ? t : "unknown") as McpJsonServer["transport"];

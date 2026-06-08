@@ -13,6 +13,7 @@ describe("parseMcpJsonServers", () => {
     expect(vm.transport).toBe("stdio");
     expect(vm.command).toBe("vault-memory");
     expect(vm.args).toEqual(["serve"]);
+    expect(vm.env).toEqual({ X: "1" }); // env is threaded through
   });
   it("infers stdio transport from a command when type is absent", () => {
     const servers = parseMcpJsonServers(JSON.stringify({ mcpServers: { a: { command: "foo", args: [] } } }));
@@ -27,5 +28,7 @@ describe("parseMcpJsonServers", () => {
     expect(parseMcpJsonServers("{}")).toEqual([]);
     expect(parseMcpJsonServers("not json")).toEqual([]);
     expect(parseMcpJsonServers(JSON.stringify({ mcpServers: null }))).toEqual([]);
+    expect(parseMcpJsonServers(JSON.stringify({ mcpServers: [] }))).toEqual([]);       // array, not object
+    expect(parseMcpJsonServers(JSON.stringify({ mcpServers: {} }))).toEqual([]);        // present but empty
   });
 });

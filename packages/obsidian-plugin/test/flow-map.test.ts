@@ -201,6 +201,11 @@ describe("defaultPortsForKind", () => {
 });
 
 describe("COMPILABLE_KINDS", () => {
+  // The expected list is HARDCODED on purpose, NOT `[...NODE_KINDS]`. This is a
+  // tripwire: adding a node kind must force a conscious edit here to confirm
+  // codegen actually compiles it. If a future kind is NOT yet compilable,
+  // COMPILABLE_KINDS will intentionally diverge from NODE_KINDS, and this test is
+  // where that decision is recorded. Do NOT "simplify" to `[...NODE_KINDS]`.
   it("is all twelve kinds now that codegen supports every kind", () => {
     expect(COMPILABLE_KINDS).toEqual([
       "input", "output", "agent", "split", "join", "loop", "verify", "synthesize", "branch", "eval", "mcp", "script",

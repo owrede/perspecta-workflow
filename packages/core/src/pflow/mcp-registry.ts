@@ -61,8 +61,9 @@ export interface ServerGrants { allow: string[]; ask: string[]; blocked: string[
 /** Partition a server's tools by permission (sorted for determinism). Pure. */
 export function resolveServerGrants(server: McpRegistryServer): ServerGrants {
   const allow: string[] = [], ask: string[] = [], blocked: string[] = [];
-  for (const [name, t] of Object.entries(server.tools)) {
-    (t.permission === "allow" ? allow : t.permission === "ask" ? ask : blocked).push(name);
+  for (const name of Object.keys(server.tools)) {
+    const p = resolveToolPermission(server, name);
+    (p === "allow" ? allow : p === "ask" ? ask : blocked).push(name);
   }
   const sorted = (a: string[]) => [...a].sort();
   return { allow: sorted(allow), ask: sorted(ask), blocked: sorted(blocked) };

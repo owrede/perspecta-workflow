@@ -144,6 +144,28 @@ describe("snapshotGrants / isPolicyStricter", () => {
   });
 });
 
+describe("grant functions resolve the 'default' sentinel", () => {
+  const s: McpRegistryServer = {
+    whitelisted: true, probe: { status: "hot" },
+    groupDefaults: { read: "allow", interactive: "ask", write: "blocked" },
+    tools: {
+      r: { group: "read", groupSource: "heuristic", permission: "default" },
+      w: { group: "write", groupSource: "heuristic", permission: "default" },
+      pinned: { group: "read", groupSource: "heuristic", permission: "ask" },
+    },
+  };
+  it("resolveServerGrants partitions by resolved permission", () => {
+    const g = resolveServerGrants(s);
+    expect(g.allow).toEqual(["r"]); expect(g.ask).toEqual(["pinned"]); expect(g.blocked).toEqual(["w"]);
+  });
+  it("snapshotGrants emits resolved concrete values", () => {
+    expect(snapshotGrants(s)).toEqual({ r: "allow", w: "blocked", pinned: "ask" });
+  });
+  it("isPolicyStricter compares resolved values", () => {
+    expect(isPolicyStricter({ r: "allow", w: "ask" }, s)).toEqual(["w"]);
+  });
+});
+
 describe("summarizeWorkflowResources", () => {
   const doc = {
     pflowFormatVersion: 1, workflow: { name: "w", description: "d" },

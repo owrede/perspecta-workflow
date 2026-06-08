@@ -99,26 +99,62 @@ describe("codegen — eval comparison mode + reconvergence", () => {
   it("weaves both candidate and reference inputs into the eval call", () => {
     const code = generateClaudeCodeWorkflow(doc);
     expect(code).toContain("EVAL: pass");
-    // both upstream agents' result vars must appear in the emitted code (no dropped input)
-    expect(code).toMatch(/cand/i);
-    expect(code).toMatch(/ref/i);
+    // Extract the eval node's OWN agent call (label "Compare") and assert BOTH
+    // upstream result vars are interpolated INSIDE it — a dropped input would
+    // remove one of these from the call body, failing the test. (Asserting on
+    // the whole `code` is vacuous: the upstream agents declare cand/ref vars
+    // regardless of whether the eval weaves them.)
+    //
+    // The match MUST anchor at the Compare declaration (`const Compare_N = await
+    // agent(`), not the first `await agent(` in the file. A non-anchored capture
+    // would swallow the upstream `const Ref_N = await agent(...)` declaration
+    // line, so `Ref_\d` would match even if the eval prompt dropped reference —
+    // re-introducing the very vacuousness this test exists to kill.
+    const m = code.match(/const Compare_\d+ = await agent\(([\s\S]*?)\{ label: "Compare"[^)]*\)/);
+    expect(m, "could not locate the Compare eval agent call in generated code").not.toBeNull();
+    const evalCall = m![1];
+    expect(evalCall).toMatch(/Cand_\d/);
+    expect(evalCall).toMatch(/Ref_\d/);
   });
 
-  it("a consumer downstream of the pass arm references defined variables only", () => {
+  it("executes end-to-end with stub helpers (no dangling arm-local var)", async () => {
     const code = generateClaudeCodeWorkflow(doc);
-    expect(code).toContain("Polish");
-    // The emitted artifact is an ES module: a `// Generated...` header, an
-    // `export const meta = {...}` block, then the executable workflow body
-    // (await agent(...) calls + the pass/fail dispatch). Only the body is a
-    // legal function body, so strip the module preamble up to and including
-    // the meta export's closing brace, then compile-check the body in strict
-    // mode WITHOUT executing it. A dangling arm-local var (ReferenceError-
-    // shaped bug) is a scope/syntax error that strict parsing surfaces; the
-    // runtime helper names are provided as params so they are defined.
-    const metaEnd = code.indexOf("\n}\n", code.indexOf("export const meta"));
-    expect(metaEnd).toBeGreaterThanOrEqual(0);
-    const body = code.slice(metaEnd + 3);
-    const wrap = `"use strict"; return (async (agent, log, parallel, pipeline, args) => {\n${body}\n});`;
-    expect(() => Function(wrap)).not.toThrow();
+    // Strip the ES-module preamble (header comment + `export const meta = {...}`)
+    // so the remaining body is a legal async-function body. The meta object ends
+    // with the first `\n}\n` after `export const meta`.
+    const metaStart = code.indexOf("export const meta");
+    const metaEnd = code.indexOf("\n}\n", metaStart);
+    expect(metaEnd).toBeGreaterThan(metaStart);
+    const body = code.slice(metaEnd + 3); // skip past "\n}\n"
+    // Build an async function FROM the body and EXECUTE it with stub helpers.
+    // The AsyncFunction constructor wraps `body` in an async function, so we pass
+    // the workflow statements (incl. the final `return`) directly. agent() always
+    // returns a passing verdict so the `pass` arm and its reconvergent consumer
+    // ("Use"/"Polish") actually run — a dangling arm-local var would throw a
+    // ReferenceError here, which parse-only checking (Function(...) without
+    // calling) cannot surface.
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+      ...args: string[]
+    ) => (...a: unknown[]) => Promise<unknown>;
+    const run = new AsyncFunction("agent", "log", "parallel", "pipeline", "args", body);
+    const agent = async () => "EVAL: pass";
+    const log = () => {};
+    const parallel = async (thunks: Array<() => Promise<unknown>>) =>
+      Promise.all(thunks.map((t) => t()));
+    const pipeline = async (
+      items: unknown[],
+      ...stages: Array<(x: unknown) => Promise<unknown>>
+    ) => {
+      const out: unknown[] = [];
+      for (const it of items) {
+        let v: unknown = it;
+        for (const s of stages) v = await s(v);
+        out.push(v);
+      }
+      return out;
+    };
+    // Should run to completion without a ReferenceError. We only care that
+    // execution does not throw; the resolved value is the workflow output.
+    await expect(run(agent, log, parallel, pipeline, { x: "topic" })).resolves.toBeDefined();
   });
 });

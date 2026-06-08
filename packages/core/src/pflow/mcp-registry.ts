@@ -90,6 +90,27 @@ export function resolveToolPermission(server: McpRegistryServer, toolName: strin
   return serverGroupDefaults(server)[t.group];
 }
 
+/** Set a single tool's permission, collapsing to "default" if it matches the group default. Immutable. */
+export function setToolPermission(
+  server: McpRegistryServer,
+  toolName: string,
+  permission: McpToolPermission,
+): McpRegistryServer {
+  const t = server.tools[toolName];
+  if (!t) return server;
+  const groupDefault = serverGroupDefaults(server)[t.group];
+  const stored: McpStoredPermission = permission === groupDefault ? "default" : permission;
+  return { ...server, tools: { ...server.tools, [toolName]: { ...t, permission: stored } } };
+}
+
+/** Returns true when every tool in the given group resolves to the group's default permission. Pure. */
+export function groupIsUniform(server: McpRegistryServer, group: McpToolGroup): boolean {
+  const def = serverGroupDefaults(server)[group];
+  return Object.keys(server.tools)
+    .filter((n) => server.tools[n].group === group)
+    .every((n) => resolveToolPermission(server, n) === def);
+}
+
 /** Snapshot tool→permission for a server (stored on an mcp node at export). Pure. */
 export function snapshotGrants(server: McpRegistryServer): Record<string, McpToolPermission> {
   const out: Record<string, McpToolPermission> = {};

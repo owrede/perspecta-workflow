@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyToolGroup, resolveServerGrants, applyGroupPermission, serverGroupDefaults, DEFAULT_GROUP_DEFAULTS, resolveToolPermission } from "../../src/pflow/mcp-registry.js";
+import { classifyToolGroup, resolveServerGrants, applyGroupPermission, serverGroupDefaults, DEFAULT_GROUP_DEFAULTS, resolveToolPermission, setToolPermission, groupIsUniform } from "../../src/pflow/mcp-registry.js";
 import type { McpRegistryServer } from "../../src/pflow/mcp-registry.js";
 
 describe("classifyToolGroup", () => {
@@ -218,4 +218,36 @@ describe("summarizeWorkflowResources", () => {
     expect(s.services).toEqual([]);
     expect(s.allMet).toBe(true);
   });
+});
+
+describe("setToolPermission (auto-collapses a deviation that equals the group default)", () => {
+  const base: McpRegistryServer = {
+    whitelisted: true, probe: { status: "hot" },
+    groupDefaults: { read: "ask", interactive: "ask", write: "ask" },
+    tools: { t: { group: "read", groupSource: "heuristic", permission: "default" } },
+  };
+  it("stores a concrete value when it differs from the group default", () => {
+    expect(setToolPermission(base, "t", "allow").tools.t.permission).toBe("allow");
+  });
+  it("stores 'default' when the chosen value equals the group default (collapse)", () => {
+    const deviated = setToolPermission(base, "t", "allow");
+    expect(setToolPermission(deviated, "t", "ask").tools.t.permission).toBe("default");
+  });
+  it("is immutable", () => { setToolPermission(base, "t", "allow"); expect(base.tools.t.permission).toBe("default"); });
+  it("no-ops for an unknown tool", () => { expect(setToolPermission(base, "nope", "allow")).toEqual(base); });
+});
+
+describe("groupIsUniform", () => {
+  const s: McpRegistryServer = {
+    whitelisted: true, probe: { status: "hot" },
+    groupDefaults: { read: "ask", interactive: "ask", write: "ask" },
+    tools: {
+      a: { group: "read", groupSource: "heuristic", permission: "default" },
+      b: { group: "read", groupSource: "heuristic", permission: "ask" },
+      c: { group: "write", groupSource: "heuristic", permission: "allow" },
+    },
+  };
+  it("is true when every tool in the group resolves to the group default", () => { expect(groupIsUniform(s, "read")).toBe(true); });
+  it("is false when a tool deviates from the group default", () => { expect(groupIsUniform(s, "write")).toBe(false); });
+  it("is true for a group with no tools", () => { expect(groupIsUniform(s, "interactive")).toBe(true); });
 });

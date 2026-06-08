@@ -2,7 +2,7 @@ import { MarkerType } from "@xyflow/system";
 import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants, snapshotGrants } from "@perspecta/core";
 import type { TokenPort, TokenType, McpRegistry } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
-import { templateForMode, type EvalMode } from "./eval-templates.js";
+import { templateForMode, DEFAULT_EVAL_MODE, type EvalMode } from "./eval-templates.js";
 
 /** A port as rendered on the canvas: the persisted Port plus `wired` — whether
  *  any wire touches this port. The node fills a port's dot when it is wired
@@ -599,11 +599,16 @@ export function applyAddNode(
   const { inputs, outputs } = defaultPortsForKind(kind);
   const node: PflowNode = { id, kind, label, inputs, outputs };
   const editor = doc.editor ?? { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] };
-  return {
+  const next: PflowDocument = {
     ...doc,
     nodes: [...doc.nodes, node],
     editor: { ...editor, nodePositions: [...editor.nodePositions, { nodeId: id, x, y }] },
   };
+  // An eval node arrives usable: pre-fill the default mode's template and derive
+  // its pass/fail + candidate ports. Routed through DEFAULT_EVAL_MODE so
+  // eval-templates.ts stays the single source of truth for the default.
+  if (kind === "eval") return applyEvalMode(next, id, DEFAULT_EVAL_MODE);
+  return next;
 }
 
 /** Remove a node plus every wire touching it and its saved position. Immutable. */

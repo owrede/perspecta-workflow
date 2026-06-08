@@ -695,3 +695,16 @@ describe("flow-map — eval transforms", () => {
     expect(node.config?.mode).toBe("criteria");
   });
 });
+
+describe("flow-map — add eval node defaults", () => {
+  it("a new eval node arrives with the criteria template, mode, and pass/fail ports", () => {
+    const doc = { pflowFormatVersion: 1 as const, workflow: { name: "wf", description: "" }, nodes: [], wires: [] };
+    const next = applyAddNode(doc, "eval", "New eval", 0, 0);
+    const node = next.nodes[next.nodes.length - 1];
+    expect(node.kind).toBe("eval");
+    expect(node.config?.mode).toBe("criteria");
+    expect(node.prompt).toContain("EVAL: pass");
+    expect(node.outputs.map((p) => p.name).sort()).toEqual(["fail", "pass"]);
+    expect(node.inputs.map((p) => p.name)).toEqual(["candidate"]);
+  });
+});

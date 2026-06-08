@@ -22,10 +22,26 @@ describe("buildMcpSetupPrompt", () => {
     expect(prompt).toContain(ABS); // the exact bundled-server path
   });
 
-  it("instructs a merge that never deletes unknown entries", () => {
+  it("instructs an idempotent merge that leaves unrecognized entries untouched", () => {
     const prompt = buildMcpSetupPrompt(ABS);
     expect(prompt.toLowerCase()).toContain("merge");
-    expect(prompt.toLowerCase()).toContain("do not delete");
+    expect(prompt.toLowerCase()).toContain("idempotent");
+    expect(prompt.toLowerCase()).toContain("leave untouched");
+  });
+
+  it("makes the agent classify servers and handle cloud/plugin connectors", () => {
+    const prompt = buildMcpSetupPrompt(ABS);
+    // The key hardening: cloud-OAuth / plugin servers aren't launchable verbatim.
+    expect(prompt.toLowerCase()).toContain("classify");
+    expect(prompt).toContain("LOCAL-REPRODUCIBLE");
+    expect(prompt).toContain("CLOUD-OAUTH");
+    expect(prompt.toLowerCase()).toContain("auth-required");
+  });
+
+  it("scans for secrets beyond env (url, args, headers)", () => {
+    const prompt = buildMcpSetupPrompt(ABS).toLowerCase();
+    expect(prompt).toContain("url query string");
+    expect(prompt).toContain("headers");
   });
 
   it("instructs keeping secrets as env-var references, not cleartext", () => {

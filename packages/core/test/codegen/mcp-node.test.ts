@@ -15,7 +15,7 @@ describe("mcpSubagentMarkdown", () => {
     const md = mcpSubagentMarkdown("natebjones-delta-fig", "figma", figma, "Fetch a Figma design");
     expect(md).toContain("name: natebjones-delta-fig");
     expect(md).toContain("mcpServers:");
-    expect(md).toContain("- figma");
+    expect(md).toContain('- "figma"');
     expect(md).toContain("mcp__figma__get_design");       // allow → allowedTools
     expect(md).toContain("disallowedTools:");
     expect(md).toContain("mcp__figma__create_file");      // blocked → disallowedTools
@@ -24,5 +24,21 @@ describe("mcpSubagentMarkdown", () => {
   });
   it("is deterministic", () => {
     expect(mcpSubagentMarkdown("a", "figma", figma, "x")).toBe(mcpSubagentMarkdown("a", "figma", figma, "x"));
+  });
+  it("includes the JSON-quoted description in the frontmatter", () => {
+    const md = mcpSubagentMarkdown("a", "figma", figma, "Fetch a Figma design");
+    expect(md).toContain('description: "Fetch a Figma design"');
+  });
+  it("omits both tool sections when every tool is ask", () => {
+    const allAsk: McpRegistryServer = {
+      whitelisted: true, probe: { status: "hot" }, tools: {
+        get_a: { group: "read", groupSource: "heuristic", permission: "ask" },
+        get_b: { group: "read", groupSource: "heuristic", permission: "ask" },
+      },
+    };
+    const md = mcpSubagentMarkdown("a", "figma", allAsk, "x");
+    expect(md).not.toContain("allowedTools:");
+    expect(md).not.toContain("disallowedTools:");
+    expect(md).toContain("mcpServers:"); // server still granted
   });
 });

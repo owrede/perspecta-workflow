@@ -197,7 +197,7 @@ export function mcpSubagentMarkdown(
   const g = resolveServerGrants(serverReg);
   const allow = g.allow.map((t) => mcpToolId(server, t));
   const disallow = g.blocked.map((t) => mcpToolId(server, t));
-  const lines: string[] = ["---", `name: ${name}`, `description: ${JSON.stringify(description)}`, "mcpServers:", `  - ${server}`];
+  const lines: string[] = ["---", `name: ${name}`, `description: ${JSON.stringify(description)}`, "mcpServers:", `  - ${JSON.stringify(server)}`];
   if (allow.length) { lines.push("allowedTools:"); for (const t of allow) lines.push(`  - ${t}`); }
   if (disallow.length) { lines.push("disallowedTools:"); for (const t of disallow) lines.push(`  - ${t}`); }
   lines.push("---", "", `You may use the **${server}** MCP server to accomplish this step. ` +

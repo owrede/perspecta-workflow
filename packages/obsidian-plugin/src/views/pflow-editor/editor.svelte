@@ -10,6 +10,7 @@
     toFlowNodes,
     toFlowEdges,
     applyNodePosition,
+    applyViewport,
     applyPromptAndDerivePorts,
     applyDetectPorts,
     applyAddPort,
@@ -161,6 +162,14 @@
   function onMove(nodeId: string, x: number, y: number) {
     commit(applyNodePosition(doc, nodeId, x, y));
   }
+  function onViewportChange(viewport: { x: number; y: number; zoom: number }) {
+    commit(applyViewport(doc, viewport));
+  }
+
+  // Saved pan/zoom for the canvas. Captured once at first render (xyflow seeds
+  // its initial viewport from this); subsequent persistence flows through
+  // onViewportChange. null → fit-to-content on open (file never panned yet).
+  const savedViewport = file.editor?.viewport ?? null;
   function onPrompt(nodeId: string, prompt: string) {
     // Re-derive ports from the prompt's {{in:}}/{{out:}} tokens on every edit.
     // Dropped-but-wired ports survive as orphans (dashed wires).
@@ -260,7 +269,9 @@
     <CanvasPane
       {flowNodes}
       {flowEdges}
+      {savedViewport}
       {onMove}
+      {onViewportChange}
       {onConnect}
       {onDropConnect}
       {onAddNode}

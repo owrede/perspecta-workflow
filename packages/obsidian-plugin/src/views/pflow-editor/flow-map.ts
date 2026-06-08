@@ -149,6 +149,23 @@ export function applyInspectorWidth(doc: PflowDocument, width: number): PflowDoc
   return { ...doc, editor: { ...editor, inspectorWidth: clamped } };
 }
 
+/** Persist the canvas pan/zoom into editor.viewport so reopening the .pflow
+ *  (or restoring a Perspecta arrangement that includes it) returns to the same
+ *  view instead of fit-to-content. */
+export function applyViewport(
+  doc: PflowDocument,
+  viewport: { x: number; y: number; zoom: number },
+): PflowDocument {
+  const editor = doc.editor ?? { viewport: { x: 0, y: 0, zoom: 1 }, nodePositions: [] };
+  return {
+    ...doc,
+    editor: {
+      ...editor,
+      viewport: { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
+    },
+  };
+}
+
 /** Compute a node's ports. There are NO structural ports: control-flow is
  *  inferred from wiring, not port names, so EVERY kind derives ports the same
  *  way — the union of:

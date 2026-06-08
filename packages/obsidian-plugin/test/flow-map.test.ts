@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MarkerType } from "@xyflow/system";
-import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit, applyDropConnect, applyEvalMode, applyEvalModeFlagOnly, applyBlockOnFail } from "../src/views/pflow-editor/flow-map.js";
+import { toFlowNodes, toFlowEdges, applyNodePosition, applyViewport, applyPromptEdit, applyDropConnect, applyEvalMode, applyEvalModeFlagOnly, applyBlockOnFail } from "../src/views/pflow-editor/flow-map.js";
 import { templateForMode } from "../src/views/pflow-editor/eval-templates.js";
 import type { PflowDocument } from "@perspecta/core";
 
@@ -130,6 +130,26 @@ describe("applyNodePosition", () => {
     const positions = next.editor!.nodePositions.filter((p) => p.nodeId === "in");
     expect(positions).toHaveLength(1);
     expect(positions[0]).toEqual({ nodeId: "in", x: 50, y: 60 });
+  });
+});
+
+describe("applyViewport", () => {
+  it("writes pan/zoom into editor.viewport without mutating the input", () => {
+    const next = applyViewport(DOC, { x: -120, y: 64, zoom: 1.75 });
+    expect(next.editor!.viewport).toEqual({ x: -120, y: 64, zoom: 1.75 });
+    // input untouched
+    expect(DOC.editor!.viewport).toEqual({ x: 0, y: 0, zoom: 1 });
+  });
+  it("preserves nodePositions and inspectorWidth alongside the new viewport", () => {
+    const withWidth: PflowDocument = { ...DOC, editor: { ...DOC.editor!, inspectorWidth: 360 } };
+    const next = applyViewport(withWidth, { x: 5, y: 5, zoom: 0.5 });
+    expect(next.editor!.nodePositions).toEqual(DOC.editor!.nodePositions);
+    expect(next.editor!.inspectorWidth).toBe(360);
+  });
+  it("creates an editor block when the doc has none", () => {
+    const bare: PflowDocument = { pflowFormatVersion: 1, workflow: { name: "x", description: "" }, nodes: [], wires: [] };
+    const next = applyViewport(bare, { x: 1, y: 2, zoom: 3 });
+    expect(next.editor).toEqual({ viewport: { x: 1, y: 2, zoom: 3 }, nodePositions: [] });
   });
 });
 

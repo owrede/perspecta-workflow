@@ -49,7 +49,9 @@
     flowNodes,
     flowEdges,
     selectedId,
+    savedViewport,
     onMove,
+    onViewportChange,
     onSelect,
     onConnect,
     onDropConnect,
@@ -59,13 +61,29 @@
     flowNodes: FlowNode[];
     flowEdges: FlowEdge[];
     selectedId: string | null;
+    // Persisted pan/zoom from editor.viewport, or null to fit-to-content on open.
+    savedViewport: { x: number; y: number; zoom: number } | null;
     onMove: (nodeId: string, x: number, y: number) => void;
+    onViewportChange: (viewport: { x: number; y: number; zoom: number }) => void;
     onSelect: (nodeId: string | null) => void;
     onConnect: (c: { source: string; sourceHandle: string; target: string; targetHandle: string }) => void;
     onDropConnect: (d: { fromNodeId: string; fromPortId: string; fromType: "source" | "target"; toNodeId: string }) => void;
     onAddNode: (kind: NodeKind, x: number, y: number) => void;
     onDeleteRequest: (nodeId: string) => void;
   } = $props();
+
+  // When a viewport was saved, seed xyflow with it and DON'T fitView (xyflow
+  // ignores a provided viewport when fitView is set). First open of a file with
+  // no saved viewport falls back to fitView. Captured once at mount: re-fitting
+  // on every doc change would fight the user's panning.
+  const initialViewport = savedViewport ?? undefined;
+  const useFitView = savedViewport === null;
+
+  // onmoveend fires when a pan/zoom interaction settles — persist it then, not
+  // on every intermediate frame (mirrors inspectorWidth's commit-on-release).
+  function handleMoveEnd(_event: MouseEvent | TouchEvent | null, viewport: { x: number; y: number; zoom: number }) {
+    onViewportChange({ x: viewport.x, y: viewport.y, zoom: viewport.zoom });
+  }
 
   const PflowNode = PflowNodeRaw as unknown as Component<NodeProps>;
   const nodeTypes = { pflow: PflowNode };
@@ -228,7 +246,9 @@
     bind:edges
     {nodeTypes}
     {edgeTypes}
-    fitView
+    fitView={useFitView}
+    initialViewport={initialViewport}
+    onmoveend={handleMoveEnd as never}
     onnodedragstop={handleNodeDragStop}
     onselectionchange={handleSelectionChange}
     onpanecontextmenu={({ event }) => handlePaneContextMenu(event as MouseEvent)}

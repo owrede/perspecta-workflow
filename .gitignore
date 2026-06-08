@@ -3,8 +3,9 @@ dist/
 *.log
 .mcp.json
 
-# Obsidian plugin build artifact (built fresh for releases — see B8)
+# Obsidian plugin build artifacts (built fresh for releases — see B8)
 packages/obsidian-plugin/main.js
+packages/obsidian-plugin/mcp-server.mjs
 .DS_Store
 
 # Vendored prebuilt perspecta-ui must be tracked (CI resolves it without the sibling repo)

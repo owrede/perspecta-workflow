@@ -65,3 +65,31 @@ const ctx = await esbuild.context({
 });
 
 if (watch) { await ctx.watch(); } else { await ctx.rebuild(); await ctx.dispose(); }
+
+// ---- Bundle the MCP server into a self-contained file shipped in the plugin
+// folder. The agent (Claude Code) spawns this as its own Node child process
+// over stdio — it is NOT loaded into Obsidian's renderer — so it targets
+// platform:node and INLINES all deps (opposite of the main bundle, which keeps
+// @modelcontextprotocol/sdk external). Output sits next to main.js so it ships
+// with the plugin and the "Copy setup prompt" button can point node at it.
+const serverCtx = await esbuild.context({
+  entryPoints: ["../mcp-server/src/server.ts"],
+  bundle: true,
+  // The server entry uses top-level await and import.meta.url, which require
+  // ESM format. CJS does not support either. We emit .mjs so Node treats the
+  // file as ESM regardless of the nearest package.json's "type" field.
+  // The banner polyfills `require` for bundled CJS deps (e.g. yaml) whose
+  // dynamic require() calls would otherwise throw in an ESM context.
+  format: "esm",
+  platform: "node",
+  target: "node18",
+  outfile: "mcp-server.mjs",
+  sourcemap: false,
+  logLevel: "info",
+  banner: {
+    js: `import { createRequire } from "module"; const require = createRequire(import.meta.url);`,
+  },
+  // No externals: the server must run with only the user's system `node`.
+});
+
+if (watch) { await serverCtx.watch(); } else { await serverCtx.rebuild(); await serverCtx.dispose(); }

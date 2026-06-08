@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { App } from "obsidian";
   import type { PflowDocument, NodeKind } from "@perspecta/core";
+  import { mcpLints } from "@perspecta/core";
   import CanvasPane from "./canvas-pane.svelte";
   import InspectorPane from "./inspector-pane.svelte";
   import { confirmModal } from "./confirm-modal.js";
@@ -24,6 +25,7 @@
     applyWorkflowMeta,
     applyArgDefault,
     applyInspectorWidth,
+    applyMcpServer,
     DEFAULT_INSPECTOR_WIDTH,
     MIN_INSPECTOR_WIDTH,
     MAX_INSPECTOR_WIDTH,
@@ -34,6 +36,8 @@
     app,
     onChange,
     onExport,
+    registry,
+    onMcpServer,
   }: {
     file: PflowDocument;
     app: App;
@@ -42,6 +46,8 @@
     // written path, or rejects with the validation/codegen error message. The
     // view supplies this (it owns vault access); the inspector renders the button.
     onExport: (doc: PflowDocument) => Promise<string>;
+    registry: import("@perspecta/core").McpRegistry;
+    onMcpServer: (nodeId: string, server: string) => void;
   } = $props();
 
   let doc = $state<PflowDocument>(file);
@@ -110,9 +116,20 @@
     };
   });
 
+  // MCP lint warnings for all nodes, computed here where the full doc is available.
+  // Passed to InspectorPane which filters to the selected node.
+  const mcpNodeWarnings = $derived(mcpLints(doc, registry));
+
   function commit(next: PflowDocument) {
     doc = next;
     onChange(next);
+  }
+
+  function handleMcpServer(nodeId: string, server: string) {
+    // applyMcpServer updates the doc; onChange (via commit) persists it in the view.
+    // onMcpServer is also called so the view can do any additional bookkeeping.
+    commit(applyMcpServer(doc, nodeId, server));
+    onMcpServer(nodeId, server);
   }
 
   function onMove(nodeId: string, x: number, y: number) {
@@ -253,6 +270,9 @@
       {onPortType}
       {onPortRename}
       onExport={onExportCurrent}
+      {registry}
+      mcpWarnings={mcpNodeWarnings}
+      onMcpServer={handleMcpServer}
     />
   </div>
 </div>

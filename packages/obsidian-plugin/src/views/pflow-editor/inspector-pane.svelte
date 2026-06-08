@@ -12,9 +12,9 @@
 -->
 
 <script lang="ts">
-  import { NODE_KINDS, type NodeKind } from "@perspecta/core";
+  import { NODE_KINDS, type NodeKind, type PflowError } from "@perspecta/core";
   import type { FlowNodeData } from "./flow-map.js";
-  import { COMPILABLE_KINDS } from "./flow-map.js";
+  import { COMPILABLE_KINDS, grantSummary } from "./flow-map.js";
   import { KIND_INFO, FALLBACK_ICON, PROMPT_KINDS } from "./kind-info.js";
   import PromptField from "./prompt-field.svelte";
   import { isPortTokenLocked } from "./flow-map.js";
@@ -47,6 +47,9 @@
     onPortType,
     onPortRename,
     onExport,
+    registry,
+    mcpWarnings,
+    onMcpServer,
   }: {
     node: { id: string; data: FlowNodeData } | null;
     workflow: { name: string; description: string };
@@ -64,6 +67,9 @@
     // Export the workflow to a Claude Code dynamic workflow file. Resolves to the
     // written vault-relative path, or rejects with the validation/codegen error.
     onExport: () => Promise<string>;
+    registry: import("@perspecta/core").McpRegistry;
+    mcpWarnings: PflowError[];
+    onMcpServer: (nodeId: string, server: string) => void;
   } = $props();
 
   // Export-button state (Mode B only): idle → busy → ok/err, with the result
@@ -96,6 +102,19 @@
   const iconPath = $derived(info?.icon ?? FALLBACK_ICON);
   const accent = $derived(info?.color ?? "var(--text-muted)");
   const showPrompt = $derived(node ? PROMPT_KINDS.includes(node.data.kind as NodeKind) : false);
+
+  // Whitelisted + hot servers, for the MCP service picker.
+  const hotServerNames = $derived(
+    Object.entries(registry)
+      .filter(([, r]) => r.whitelisted && r.probe.status === "hot")
+      .map(([name]) => name)
+      .sort(),
+  );
+
+  // MCP lint warnings for the currently selected node (filtered from the editor-computed list).
+  const nodeWarnings = $derived(
+    node ? mcpWarnings.filter((e) => e.nodeId === node.id) : [],
+  );
 </script>
 
 <div class="pflow-inspector">
@@ -197,6 +216,27 @@
         <p class="pflow-insp__desc">{info.description}</p>
       {/if}
     </header>
+
+    {#if node.data.kind === "mcp"}
+      <section class="pflow-insp__section">
+        <h3 class="pflow-insp__section-title">Service</h3>
+        <p class="pflow-insp__help">The external MCP server this step talks to.</p>
+        <select
+          class="pflow-insp__input"
+          value={node.data.mcpServer ?? ""}
+          onchange={(e) => onMcpServer(node!.id, (e.currentTarget as HTMLSelectElement).value)}
+        >
+          <option value="">— select a service —</option>
+          {#each hotServerNames as name}<option value={name}>{name}</option>{/each}
+        </select>
+        {#if node.data.mcpServer}
+          <p class="pflow-insp__help">{grantSummary(registry, node.data.mcpServer)}</p>
+        {/if}
+        {#each nodeWarnings as w}
+          <p class="pflow-insp__warn">⚠ {w.message}</p>
+        {/each}
+      </section>
+    {/if}
 
     <section class="pflow-insp__section">
       <h3 class="pflow-insp__section-title">Name</h3>
@@ -454,6 +494,11 @@
   }
   .pflow-insp__export-msg--ok { color: var(--text-success, var(--text-muted)); }
   .pflow-insp__export-msg--err { color: var(--text-error, var(--text-muted)); }
+  .pflow-insp__warn {
+    color: var(--text-error, var(--text-muted));
+    font-size: var(--font-ui-smaller);
+    margin: 2px 0 0;
+  }
   .pflow-insp__empty {
     margin: 0;
     color: var(--text-faint);

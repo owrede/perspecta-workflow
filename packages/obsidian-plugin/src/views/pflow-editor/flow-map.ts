@@ -1,6 +1,6 @@
 import { MarkerType } from "@xyflow/system";
-import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken } from "@perspecta/core";
-import type { TokenPort, TokenType } from "@perspecta/core";
+import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants } from "@perspecta/core";
+import type { TokenPort, TokenType, McpRegistry } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 
 /** A port as rendered on the canvas: the persisted Port plus `wired` — whether
@@ -629,6 +629,21 @@ export function orphanedWiresForKind(doc: PflowDocument, nodeId: string, kind: N
     if (w.from.nodeId === nodeId && !outIds.has(w.from.portId)) return true;
     return false;
   });
+}
+
+/** Set an mcp node's bound server (config.mcpServer). Immutable. */
+export function applyMcpServer(doc: PflowDocument, nodeId: string, server: string): PflowDocument {
+  return { ...doc, nodes: doc.nodes.map((n) =>
+    n.id === nodeId ? { ...n, config: { ...(n.config ?? {}), mcpServer: server } } : n) };
+}
+
+/** A one-line grant summary for a server against the registry (for the inspector). */
+export function grantSummary(registry: McpRegistry, server: string): string {
+  const reg = registry[server];
+  if (!reg) return "not whitelisted in this vault";
+  if (reg.probe.status !== "hot") return `${reg.probe.status}${reg.probe.error ? `: ${reg.probe.error}` : ""}`;
+  const g = resolveServerGrants(reg);
+  return `${Object.keys(reg.tools).length} tools — ${g.allow.length} always · ${g.ask.length} ask · ${g.blocked.length} blocked`;
 }
 
 /** Change a node's kind, reset its ports to the kind defaults, and drop any

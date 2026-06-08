@@ -1,9 +1,10 @@
 import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { parsePflow, type PflowDocument } from "@perspecta/core";
-import { dedupeDuplicateNamedPorts } from "./flow-map.js";
+import { dedupeDuplicateNamedPorts, applyMcpServer } from "./flow-map.js";
 import { exportClaudeCodeWorkflowFile } from "../../commands/exportWorkflow.js";
 import Editor from "./editor.svelte";
+import type PerspectaWorkflowPlugin from "../../main.js";
 
 export const VIEW_TYPE_PFLOW = "perspecta-pflow-editor";
 
@@ -11,7 +12,7 @@ export class PflowEditorView extends TextFileView {
   private current: PflowDocument | null = null;
   private svelteApp: ReturnType<typeof mount> | null = null;
 
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: WorkspaceLeaf, private plugin: PerspectaWorkflowPlugin) {
     super(leaf);
   }
 
@@ -82,6 +83,11 @@ export class PflowEditorView extends TextFileView {
         // codegen error propagate so the inspector can show it).
         onExport: (doc: PflowDocument) =>
           exportClaudeCodeWorkflowFile(this.app.vault.adapter, doc),
+        registry: this.plugin.settings.mcpRegistry,
+        onMcpServer: (nodeId: string, server: string) => {
+          this.current = applyMcpServer(this.current!, nodeId, server);
+          this.requestSave();
+        },
       },
     });
   }

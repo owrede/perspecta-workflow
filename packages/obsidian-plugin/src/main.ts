@@ -189,7 +189,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     this.skills = new WorkflowSkillSyncService(this.app.vault.adapter, (msg) => new Notice(msg));
     this.addSettingTab(new PerspectaSettingTab(this.app, this));
     this.registerView(VIEW_TYPE_PERSPECTA, (leaf: WorkspaceLeaf) => new ResultsView(leaf));
-    this.registerView(VIEW_TYPE_PFLOW, (leaf: WorkspaceLeaf) => new PflowEditorView(leaf));
+    this.registerView(VIEW_TYPE_PFLOW, (leaf: WorkspaceLeaf) => new PflowEditorView(leaf, this));
     this.registerExtensions(["pflow"], VIEW_TYPE_PFLOW);
 
     this.statusEl = this.addStatusBarItem();

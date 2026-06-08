@@ -176,6 +176,16 @@ describe("buildWorkflowArtifacts", () => {
     expect(out.subagents[0].path).toBe(".claude/agents/wf-fig.md");
     expect(out.subagents[0].content).toContain("mcp__figma__get_design");
   });
+  it("emits a minimal grant (server only, no tool sections) for a server absent from the registry", () => {
+    // DOC's mcp node binds "figma"; pass a registry that lacks it → cold stub.
+    const out = buildWorkflowArtifacts(DOC, {});
+    expect(out.subagents).toHaveLength(1);
+    expect(out.subagents[0].path).toBe(".claude/agents/wf-fig.md");
+    const md = out.subagents[0].content;
+    expect(md).toContain("mcpServers:");          // server still granted
+    expect(md).not.toContain("allowedTools:");    // no tools resolved
+    expect(md).not.toContain("disallowedTools:");
+  });
   it("returns no subagents for a doc with no mcp nodes", () => {
     const plain = parsePflow(JSON.stringify({
       pflowFormatVersion: 1, workflow: { name: "p", description: "d" },

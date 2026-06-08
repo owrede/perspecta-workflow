@@ -447,9 +447,12 @@ export function generateClaudeCodeWorkflow(doc: PflowDocument): string {
   return code;
 }
 
+/** One generated companion file (a subagent .md) to be written by the caller. */
+export interface WorkflowSubagentFile { path: string; content: string }
+
 export interface WorkflowArtifacts {
   workflowJs: string;
-  subagents: { path: string; content: string }[];
+  subagents: WorkflowSubagentFile[];
 }
 
 /** Build ALL artifacts for a workflow: the .js plus one .claude/agents/<name>.md
@@ -458,7 +461,7 @@ export interface WorkflowArtifacts {
  *  the caller performs the writes. */
 export function buildWorkflowArtifacts(doc: PflowDocument, registry: McpRegistry): WorkflowArtifacts {
   const workflowJs = generateClaudeCodeWorkflow(doc);
-  const subagents: { path: string; content: string }[] = [];
+  const subagents: WorkflowSubagentFile[] = [];
   for (const node of doc.nodes) {
     if (node.kind !== "mcp") continue;
     const server = (node.config?.mcpServer as string | undefined) ?? "";

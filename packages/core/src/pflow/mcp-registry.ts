@@ -1,3 +1,5 @@
+import type { PflowDocument } from "./schema.js";
+
 /** Per-tool permission, modelled on the Claude app (Blocked / Ask / Always-allow). */
 export type McpToolPermission = "blocked" | "ask" | "allow";
 
@@ -87,4 +89,33 @@ export function isPolicyStricter(
     if (STRENGTH[localPerm] < STRENGTH[exp]) stricter.push(name);
   }
   return stricter.sort();
+}
+
+export interface ResourceServiceSummary {
+  server: string;
+  nodeCount: number;
+  available: boolean;          // whitelisted + hot
+  allow: number; ask: number; blocked: number;
+}
+export interface WorkflowResourceSummary {
+  services: ResourceServiceSummary[];
+  allMet: boolean;
+}
+
+/** Roll up every mcp node's service against the registry. Pure. */
+export function summarizeWorkflowResources(doc: PflowDocument, registry: McpRegistry): WorkflowResourceSummary {
+  const counts = new Map<string, number>();
+  for (const n of doc.nodes) {
+    if (n.kind !== "mcp") continue;
+    const s = (n.config?.mcpServer as string | undefined) ?? "(none)";
+    counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+  const services: ResourceServiceSummary[] = [];
+  for (const [server, nodeCount] of [...counts.entries()].sort()) {
+    const reg = registry[server];
+    const hot = !!reg && reg.whitelisted && reg.probe.status === "hot";
+    const g = hot ? resolveServerGrants(reg) : { allow: [], ask: [], blocked: [] };
+    services.push({ server, nodeCount, available: hot, allow: g.allow.length, ask: g.ask.length, blocked: g.blocked.length });
+  }
+  return { services, allMet: services.every((s) => s.available) };
 }

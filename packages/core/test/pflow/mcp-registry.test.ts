@@ -81,6 +81,8 @@ describe("applyGroupPermission", () => {
 });
 
 import { snapshotGrants, isPolicyStricter } from "../../src/pflow/mcp-registry.js";
+import { summarizeWorkflowResources } from "../../src/pflow/mcp-registry.js";
+import type { PflowDocument } from "../../src/pflow/schema.js";
 
 describe("snapshotGrants / isPolicyStricter", () => {
   const hot: McpRegistryServer = {
@@ -106,5 +108,40 @@ describe("snapshotGrants / isPolicyStricter", () => {
     const empty: McpRegistryServer = { whitelisted: true, probe: { status: "hot" }, tools: {} };
     // expected a=allow, but local has no `a` at all → absent = blocked = stricter
     expect(isPolicyStricter({ a: "allow" }, empty)).toEqual(["a"]);
+  });
+});
+
+describe("summarizeWorkflowResources", () => {
+  const doc = {
+    pflowFormatVersion: 1, workflow: { name: "w", description: "d" },
+    nodes: [
+      { id: "a", kind: "mcp", label: "A", inputs: [], outputs: [], config: { mcpServer: "figma" } },
+      { id: "b", kind: "mcp", label: "B", inputs: [], outputs: [], config: { mcpServer: "figma" } },
+      { id: "c", kind: "mcp", label: "C", inputs: [], outputs: [], config: { mcpServer: "ghost" } },
+      { id: "d", kind: "agent", label: "D", inputs: [], outputs: [] },
+    ], wires: [],
+  } as unknown as PflowDocument;
+  const reg = { figma: { whitelisted: true, probe: { status: "hot" as const }, tools: {
+    get: { group: "read" as const, groupSource: "heuristic" as const, permission: "allow" as const },
+  } } };
+  it("rolls up per service with node counts and met/not-met", () => {
+    const s = summarizeWorkflowResources(doc, reg);
+    const figma = s.services.find((x) => x.server === "figma")!;
+    expect(figma.nodeCount).toBe(2);
+    expect(figma.available).toBe(true);
+    expect(figma.allow).toBe(1);
+    const ghost = s.services.find((x) => x.server === "ghost")!;
+    expect(ghost.available).toBe(false);
+    expect(s.allMet).toBe(false);
+  });
+  it("reports allMet true when every used service is available", () => {
+    const onlyFigma = { ...doc, nodes: doc.nodes.filter((n) => n.id !== "c") } as PflowDocument;
+    expect(summarizeWorkflowResources(onlyFigma, reg).allMet).toBe(true);
+  });
+  it("has no services for a workflow with no mcp nodes", () => {
+    const plain = { ...doc, nodes: [doc.nodes[3]] } as PflowDocument;
+    const s = summarizeWorkflowResources(plain, reg);
+    expect(s.services).toEqual([]);
+    expect(s.allMet).toBe(true);
   });
 });

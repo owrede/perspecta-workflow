@@ -50,6 +50,7 @@
     registry,
     mcpWarnings,
     onMcpServer,
+    resourceSummary,
   }: {
     node: { id: string; data: FlowNodeData } | null;
     workflow: { name: string; description: string };
@@ -70,6 +71,7 @@
     registry: import("@perspecta/core").McpRegistry;
     mcpWarnings: PflowError[];
     onMcpServer: (nodeId: string, server: string) => void;
+    resourceSummary: import("@perspecta/core").WorkflowResourceSummary;
   } = $props();
 
   // Export-button state (Mode B only): idle → busy → ok/err, with the result
@@ -175,6 +177,27 @@
         <input class="pflow-insp__input" type="text" value={argDefaults.on_exists}
           oninput={(e) => onArgDefault("on_exists", (e.currentTarget as HTMLInputElement).value)} />
       </label>
+    </section>
+
+    <section class="pflow-insp__section">
+      <h3 class="pflow-insp__section-title">External Resources</h3>
+      {#if resourceSummary.services.length === 0}
+        <p class="pflow-insp__help">This workflow uses no external services.</p>
+      {:else}
+        {#each resourceSummary.services as s}
+          <p class="pflow-insp__help">
+            <strong>{s.server}</strong> — used by {s.nodeCount} node{s.nodeCount === 1 ? "" : "s"}
+            {#if s.available}
+              · {s.allow} always / {s.ask} ask / {s.blocked} blocked
+            {:else}
+              · <span class="pflow-insp__warn">⚠ not available in this vault</span>
+            {/if}
+          </p>
+        {/each}
+        {#if !resourceSummary.allMet}
+          <p class="pflow-insp__warn">⚠ Some services this workflow needs are not available in this vault.</p>
+        {/if}
+      {/if}
     </section>
 
     <section class="pflow-insp__section">

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { App } from "obsidian";
   import type { PflowDocument, NodeKind } from "@perspecta/core";
-  import { mcpLints } from "@perspecta/core";
+  import { mcpLints, summarizeWorkflowResources } from "@perspecta/core";
   import CanvasPane from "./canvas-pane.svelte";
   import InspectorPane from "./inspector-pane.svelte";
   import { confirmModal } from "./confirm-modal.js";
@@ -117,6 +117,9 @@
   // MCP lint warnings for all nodes, computed here where the full doc is available.
   // Passed to InspectorPane which filters to the selected node.
   const mcpNodeWarnings = $derived(mcpLints(doc, registry));
+
+  // Workflow-level resource summary: per MCP service, node count + grant summary.
+  const resourceSummary = $derived(summarizeWorkflowResources(doc, registry));
 
   function commit(next: PflowDocument) {
     doc = next;
@@ -268,6 +271,7 @@
       {registry}
       mcpWarnings={mcpNodeWarnings}
       {onMcpServer}
+      {resourceSummary}
     />
   </div>
 </div>

@@ -1,39 +1,69 @@
 #!/usr/bin/env bash
-# Copy this plugin's built release artifacts into the Perspecta-Dev vault so a
+# Copy this plugin's built release artifacts into the local test vault(s) so a
 # reload picks up the fresh build. Assumes the plugin is already built (run via
 # the `deploy` npm script, which builds first).
 #
-# Vault location is overridable:
-#   PERSPECTA_VAULT_ROOT       — vault root (default: Perspecta-Dev below)
-#   PERSPECTA_VAULT_PLUGIN_DIR — exact plugin dir (overrides the computed path)
+# By default it deploys to BOTH vaults the developer uses, so neither is ever
+# left on a stale build:
+#   - Perspecta-Dev
+#   - Intelligence Impact   (the vault the plugin is actually exercised in)
 #
-# If the vault root does not exist (CI, another machine), the copy is skipped
+# Overrides:
+#   PERSPECTA_VAULT_ROOTS      — ':'-separated list of vault roots (replaces the
+#                                default list). e.g. "/a/Vault1:/b/Vault2"
+#   PERSPECTA_VAULT_ROOT       — a SINGLE vault root; when set it wins and only
+#                                that vault is targeted (back-compat / one-off).
+#   PERSPECTA_VAULT_PLUGIN_DIR — exact plugin dir; only honored together with the
+#                                single-vault PERSPECTA_VAULT_ROOT override.
+#
+# A vault root that does not exist on this machine (CI, another dev) is skipped
 # and the script still exits 0 so builds/pipelines never fail.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-VAULT_ROOT="${PERSPECTA_VAULT_ROOT:-/Users/wrede/Documents/Obsidian Vaults/Perspecta-Dev}"
 PLUGIN_ID="$(node -e "console.log(require('$ROOT/manifest.json').id)")"
-DEST="${PERSPECTA_VAULT_PLUGIN_DIR:-$VAULT_ROOT/.obsidian/plugins/$PLUGIN_ID}"
 
-# Skip gracefully when the vault isn't present on this machine.
-if [[ ! -d "$VAULT_ROOT/.obsidian" ]]; then
-  echo "deploy-dev: vault not found at '$VAULT_ROOT' — skipping."
-  exit 0
+# Default fleet of vaults to keep in sync. Add new vaults here.
+DEFAULT_VAULT_ROOTS=(
+  "/Users/wrede/Documents/Obsidian Vaults/Perspecta-Dev"
+  "/Users/wrede/Documents/Obsidian Vaults/Intelligence Impact"
+)
+
+# Resolve which vaults to target (precedence: single override > list override > default).
+EXPLICIT_PLUGIN_DIR=""
+if [[ -n "${PERSPECTA_VAULT_ROOT:-}" ]]; then
+  VAULT_ROOTS=("$PERSPECTA_VAULT_ROOT")
+  EXPLICIT_PLUGIN_DIR="${PERSPECTA_VAULT_PLUGIN_DIR:-}" # only meaningful for a single vault
+elif [[ -n "${PERSPECTA_VAULT_ROOTS:-}" ]]; then
+  IFS=':' read -r -a VAULT_ROOTS <<< "$PERSPECTA_VAULT_ROOTS"
+else
+  VAULT_ROOTS=("${DEFAULT_VAULT_ROOTS[@]}")
 fi
 
-mkdir -p "$DEST"
+# Copy the built artifacts into one vault's plugin dir. Skips a missing vault.
+deploy_to_vault() {
+  local vault_root="$1"
+  local dest="${EXPLICIT_PLUGIN_DIR:-$vault_root/.obsidian/plugins/$PLUGIN_ID}"
 
-count=0
-for f in main.js manifest.json styles.css versions.json preload.js mcp-server.mjs mcp-probe.mjs; do
-  if [[ -f "$ROOT/$f" ]]; then
-    # Remove the destination first so we replace any stale entry — including a
-    # dangling symlink left by an older dev setup (cp would follow it and fail).
-    rm -f "$DEST/$f"
-    cp "$ROOT/$f" "$DEST/$f"
-    count=$((count + 1))
+  if [[ ! -d "$vault_root/.obsidian" ]]; then
+    echo "deploy-dev: vault not found at '$vault_root' — skipping."
+    return 0
   fi
-done
 
-echo "deploy-dev: copied $count artifact(s) for '$PLUGIN_ID' → $DEST"
+  mkdir -p "$dest"
+  local count=0
+  for f in main.js manifest.json styles.css versions.json preload.js mcp-server.mjs mcp-probe.mjs; do
+    if [[ -f "$ROOT/$f" ]]; then
+      # Remove the destination first so we replace any stale entry — including a
+      # dangling symlink left by an older dev setup (cp would follow it and fail).
+      rm -f "$dest/$f"
+      cp "$ROOT/$f" "$dest/$f"
+      count=$((count + 1))
+    fi
+  done
+  echo "deploy-dev: copied $count artifact(s) for '$PLUGIN_ID' → $dest"
+}
+
+for vault in "${VAULT_ROOTS[@]}"; do
+  deploy_to_vault "$vault"
+done

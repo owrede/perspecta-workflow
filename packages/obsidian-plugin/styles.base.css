@@ -70,3 +70,7 @@
   color: var(--text-error, var(--text-normal));
   background: var(--background-secondary);
 }
+
+/* MCP permission sub-screen: active segmented-control icon + dimmed blocked tool. */
+.perspecta-mcp-perm-active svg { color: var(--interactive-accent); }
+.perspecta-mcp-tool-blocked .setting-item-name { opacity: 0.55; }

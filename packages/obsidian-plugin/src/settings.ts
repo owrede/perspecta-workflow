@@ -7,7 +7,7 @@ import {
   wiredText,
   wiredToggle,
 } from "perspecta-ui";
-import { applyGroupPermission, type McpRegistry, type McpToolGroup, type McpToolPermission } from "@perspecta/core";
+import { applyGroupPermission, setToolPermission, groupIsUniform, resolveToolPermission, serverGroupDefaults, type McpRegistry, type McpToolGroup, type McpToolPermission } from "@perspecta/core";
 import type PerspectaWorkflowPlugin from "./main.js";
 import { bundledSkillWrites } from "./skills/bundledSkills.js";
 import { CHANGELOG } from "./changelog.generated.js";
@@ -28,6 +28,9 @@ export class PerspectaSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: PerspectaWorkflowPlugin) {
     super(app, plugin);
   }
+
+  /** MCP tab view state: the server list, or one server's permission sub-screen. */
+  private mcpView: { mode: "list" } | { mode: "detail"; server: string } = { mode: "list" };
 
   display(): void {
     const store = this.plugin.settingsStore;
@@ -130,18 +133,27 @@ export class PerspectaSettingTab extends PluginSettingTab {
 
   private async renderMcpTab(el: HTMLElement): Promise<void> {
     el.empty();
+    if (this.mcpView.mode === "detail") {
+      await this.renderMcpDetail(el, this.mcpView.server);
+      return;
+    }
     const plugin = this.plugin;
     const servers = await plugin.listMcpServers();
     if (servers.length === 0) {
       renderInfoBox(el, { variant: "info", title: "No MCP servers", body: "No .mcp.json found at the vault root, or it declares no servers." });
       return;
     }
-    for (const s of servers) {
+    const enabled = servers.filter((s) => plugin.settings.mcpRegistry[s.name]?.whitelisted);
+    const available = servers.filter((s) => !plugin.settings.mcpRegistry[s.name]?.whitelisted);
+
+    const toggleRow = (s: { name: string }, group: HTMLElement) => {
       const reg = plugin.settings.mcpRegistry[s.name];
-      const status = reg?.probe.status ?? "cold";
-      const desc = reg?.whitelisted ? `${status}${reg.probe.error ? ` — ${reg.probe.error}` : ""}` : "not whitelisted";
-      const head = new Setting(el).setName(s.name).setDesc(desc);
-      head.addToggle((t) =>
+      const statusWord = reg?.probe.status === "hot" ? "enabled"
+        : reg?.probe.status === "probing" ? "probing"
+        : reg?.probe.status === "failed" ? `failed${reg.probe.error ? ` — ${reg.probe.error}` : ""}`
+        : reg?.whitelisted ? "enabled" : "not enabled";
+      const row = new Setting(group).setName(s.name).setDesc(statusWord);
+      row.addToggle((t) =>
         t.setValue(!!reg?.whitelisted).onChange(async (v) => {
           if (v) {
             await plugin.probeMcpServer(s.name);
@@ -151,38 +163,100 @@ export class PerspectaSettingTab extends PluginSettingTab {
             plugin.settings.mcpRegistry = next;
             await plugin.saveSettings();
           }
-          await this.renderMcpTab(el); // re-render this tab in place
+          await this.renderMcpTab(el);
         }),
       );
       if (reg?.whitelisted && reg.probe.status === "hot") {
-        head.addExtraButton((b) =>
+        row.addExtraButton((b) =>
           b.setIcon("refresh-cw").setTooltip("Re-probe").onClick(async () => {
             await plugin.probeMcpServer(s.name);
             await this.renderMcpTab(el);
           }),
         );
-        for (const group of ["read", "write"] as McpToolGroup[]) {
-          const groupTools = Object.entries(reg.tools).filter(([, t]) => t.group === group);
-          if (groupTools.length === 0) continue;
-          const groupHead = new Setting(el).setName(group === "read" ? "Read tools" : "Write tools").setHeading();
-          groupHead.addButton((btn) =>
-            btn.setButtonText("Block all").onClick(async () => {
-              plugin.settings.mcpRegistry[s.name] = applyGroupPermission(plugin.settings.mcpRegistry[s.name], group, "blocked");
-              await plugin.saveSettings();
-              await this.renderMcpTab(el);
-            }),
-          );
-          for (const [tool, t] of groupTools) {
-            new Setting(el).setName(tool).setDesc(t.description ?? "").addDropdown((d) =>
-              d.addOptions({ blocked: "Blocked", ask: "Ask", allow: "Always allow" })
-                .setValue(t.permission)
-                .onChange(async (v) => {
-                  plugin.settings.mcpRegistry[s.name].tools[tool].permission = v as McpToolPermission;
-                  await plugin.saveSettings();
-                }),
-            );
-          }
-        }
+        row.addButton((btn) =>
+          btn.setButtonText("Permissions").onClick(() => {
+            this.mcpView = { mode: "detail", server: s.name };
+            void this.renderMcpTab(el);
+          }),
+        );
+      }
+    };
+
+    if (enabled.length) {
+      new Setting(el).setName("Enabled").setHeading();
+      for (const s of enabled) toggleRow(s, el);
+    }
+    if (available.length) {
+      new Setting(el).setName("Available").setHeading();
+      for (const s of available) toggleRow(s, el);
+    }
+  }
+
+  private async renderMcpDetail(el: HTMLElement, serverName: string): Promise<void> {
+    const plugin = this.plugin;
+    const reg = plugin.settings.mcpRegistry[serverName];
+    new Setting(el).addButton((b) =>
+      b.setButtonText("‹ Back to servers").onClick(() => {
+        this.mcpView = { mode: "list" };
+        void this.renderMcpTab(el);
+      }),
+    );
+    if (!reg || reg.probe.status !== "hot") {
+      renderInfoBox(el, { variant: "info", title: serverName, body: "This server is not enabled or has not been probed." });
+      return;
+    }
+    new Setting(el).setName(`${serverName} — tool permissions`).setHeading()
+      .setDesc("Choose when the agent may use these tools.");
+    const GROUPS: { key: McpToolGroup; label: string }[] = [
+      { key: "read", label: "Read-only tools" },
+      { key: "interactive", label: "Interactive tools" },
+      { key: "write", label: "Write / delete tools" },
+    ];
+    for (const { key, label } of GROUPS) this.renderPermissionGroup(el, serverName, key, label);
+  }
+
+  private renderPermissionGroup(el: HTMLElement, serverName: string, group: McpToolGroup, label: string): void {
+    const plugin = this.plugin;
+    const reg = plugin.settings.mcpRegistry[serverName];
+    const toolNames = Object.keys(reg.tools).filter((n) => reg.tools[n].group === group).sort();
+    if (toolNames.length === 0) return;
+
+    const uniform = groupIsUniform(reg, group);
+    const groupDefault = serverGroupDefaults(reg)[group];
+    new Setting(el).setName(`${label} (${toolNames.length})`).setHeading()
+      .addDropdown((d) => {
+        d.addOption("allow", "Always allow");
+        d.addOption("ask", "Permission required");
+        d.addOption("blocked", "Blocked");
+        if (!uniform) d.addOption("__custom__", "— Custom");
+        d.setValue(uniform ? groupDefault : "__custom__");
+        d.onChange(async (v) => {
+          if (v === "__custom__") return;
+          plugin.settings.mcpRegistry[serverName] = applyGroupPermission(reg, group, v as McpToolPermission);
+          await plugin.saveSettings();
+          await this.renderMcpTab(el);
+        });
+      });
+
+    const ICONS: { perm: McpToolPermission; icon: string; tip: string }[] = [
+      { perm: "allow", icon: "circle-check", tip: "Always allow" },
+      { perm: "ask", icon: "hand", tip: "Permission required" },
+      { perm: "blocked", icon: "ban", tip: "Blocked" },
+    ];
+    for (const tool of toolNames) {
+      const resolved = resolveToolPermission(reg, tool);
+      const row = new Setting(el).setName(tool).setDesc(reg.tools[tool].description ?? "");
+      if (resolved === "blocked") row.settingEl.addClass("perspecta-mcp-tool-blocked");
+      for (const { perm, icon, tip } of ICONS) {
+        row.addExtraButton((b) => {
+          b.setIcon(icon).setTooltip(tip);
+          if (resolved === perm) b.extraSettingsEl.addClass("perspecta-mcp-perm-active");
+          b.onClick(async () => {
+            plugin.settings.mcpRegistry[serverName] = setToolPermission(plugin.settings.mcpRegistry[serverName], tool, perm);
+            await plugin.saveSettings();
+            await this.renderMcpTab(el);
+          });
+        });
       }
     }
   }

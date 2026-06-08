@@ -69,7 +69,7 @@ export function resolveServerGrants(server: McpRegistryServer): ServerGrants {
   return { allow: sorted(allow), ask: sorted(ask), blocked: sorted(blocked) };
 }
 
-/** Set the permission of every tool in a group (bulk action). Immutable. */
+/** Set the group default and collapse all tools in that group to "default". Immutable. */
 export function applyGroupPermission(
   server: McpRegistryServer,
   group: McpToolGroup,
@@ -77,9 +77,9 @@ export function applyGroupPermission(
 ): McpRegistryServer {
   const tools: Record<string, McpRegistryTool> = {};
   for (const [name, t] of Object.entries(server.tools)) {
-    tools[name] = t.group === group ? { ...t, permission } : t;
+    tools[name] = t.group === group ? { ...t, permission: "default" } : t;
   }
-  return { ...server, tools };
+  return { ...server, groupDefaults: { ...serverGroupDefaults(server), [group]: permission }, tools };
 }
 
 /** Resolve a tool's effective permission: if stored as "default", use the server's group default. Pure. */

@@ -97,18 +97,19 @@ describe("resolveServerGrants", () => {
   });
 });
 
-describe("applyGroupPermission", () => {
-  it("sets every tool in a group to the new permission (returns a new server)", () => {
-    // create_file starts "blocked"; apply "allow" to the write group → it flips.
+describe("applyGroupPermission (sets the group default + collapses that group)", () => {
+  it("sets groupDefaults[group] and collapses the group's tools to 'default'", () => {
     const next = applyGroupPermission(server, "write", "allow");
-    expect(next.tools.create_file.permission).toBe("allow"); // write tool changed
-    expect(next.tools.get_design.permission).toBe("allow");   // read tool untouched
-    expect(next.tools.get_screenshot.permission).toBe("ask"); // read tool untouched
+    expect(next.groupDefaults.write).toBe("allow");
+    expect(next.tools.create_file.permission).toBe("default");
+    expect(next.tools.get_design.permission).toBe("allow");
+    expect(next.tools.get_screenshot.permission).toBe("ask");
+    expect(resolveToolPermission(next, "create_file")).toBe("allow");
   });
   it("does not mutate the input server (immutable)", () => {
-    // Applying a DIFFERENT permission than the fixture has must leave the input intact.
     applyGroupPermission(server, "write", "allow");
-    expect(server.tools.create_file.permission).toBe("blocked"); // original preserved
+    expect(server.tools.create_file.permission).toBe("blocked");
+    expect(server.groupDefaults.write).toBe("ask");
   });
 });
 

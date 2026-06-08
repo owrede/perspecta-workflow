@@ -160,3 +160,39 @@ describe("codegen — eval comparison mode + reconvergence", () => {
     await expect(run(agent, log, parallel, pipeline, { x: "topic" })).resolves.toBeDefined();
   });
 });
+
+describe("codegen — eval verdict as a loop sentinel (Karpathy)", () => {
+  it("a loop node configured with an EVAL sentinel emits a matching break", () => {
+    const doc: PflowDocument = {
+      pflowFormatVersion: 1,
+      workflow: { name: "karpathy_wf", description: "" },
+      // A valid loop region needs a refine back-edge: the loop node's output
+      // must feed an upstream member that then forward-reaches the loop again
+      // (see regions.ts findLoopRegions). So we add a "draft" refine agent that
+      // the loop's output cycles back into. The EVAL sentinel config stays on
+      // the loop node — that is what this smoke test guards.
+      nodes: [
+        { id: "in", kind: "input", label: "in", inputs: [], outputs: [{ id: "out:x", name: "x", schema: { type: "string" } }] },
+        { id: "draft", kind: "agent", label: "Draft", prompt: "Draft {{in:x}}, applying {{in:fix}}.",
+          inputs: [{ id: "in:x", name: "x", schema: { type: "string" } }, { id: "in:fix", name: "fix", schema: { type: "string" } }],
+          outputs: [{ id: "out:d", name: "d", schema: { type: "string" } }] },
+        { id: "loop", kind: "loop", label: "Refine", prompt: "Refine {{in:d}} until good. End with EVAL: pass when done.",
+          inputs: [{ id: "in:d", name: "d", schema: { type: "string" } }],
+          outputs: [{ id: "out:r", name: "r", schema: { type: "string" } }],
+          config: { maxPasses: 3, sentinel: "EVAL:\\s*pass" } },
+        { id: "out", kind: "output", label: "out", inputs: [{ id: "in:o", name: "o", schema: { type: "string" } }], outputs: [] },
+      ],
+      wires: [
+        { from: { nodeId: "in", portId: "out:x" }, to: { nodeId: "draft", portId: "in:x" } },
+        { from: { nodeId: "draft", portId: "out:d" }, to: { nodeId: "loop", portId: "in:d" } },
+        { from: { nodeId: "loop", portId: "out:r" }, to: { nodeId: "draft", portId: "in:fix" } }, // back-edge
+        { from: { nodeId: "draft", portId: "out:d" }, to: { nodeId: "out", portId: "in:o" } },
+      ],
+    };
+    const code = generateClaudeCodeWorkflow(doc);
+    // The loop's break condition uses the EVAL sentinel.
+    expect(code).toContain("EVAL:");
+    expect(code).toContain("for (let pass");
+    expect(code).toContain("break");
+  });
+});

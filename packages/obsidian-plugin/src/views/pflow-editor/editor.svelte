@@ -5,6 +5,7 @@
   import CanvasPane from "./canvas-pane.svelte";
   import InspectorPane from "./inspector-pane.svelte";
   import { confirmModal } from "./confirm-modal.js";
+  import { type EvalMode } from "./eval-templates.js";
   import {
     toFlowNodes,
     toFlowEdges,
@@ -26,6 +27,9 @@
     applyArgDefault,
     applyInspectorWidth,
     applyMcpServer,
+    applyEvalMode,
+    applyEvalModeFlagOnly,
+    applyBlockOnFail,
     DEFAULT_INSPECTOR_WIDTH,
     MIN_INSPECTOR_WIDTH,
     MAX_INSPECTOR_WIDTH,
@@ -128,6 +132,30 @@
 
   function onMcpServer(nodeId: string, server: string) {
     commit(applyMcpServer(doc, nodeId, server));
+  }
+
+  async function onEvalMode(nodeId: string, mode: EvalMode) {
+    const node = doc.nodes.find((n) => n.id === nodeId);
+    const current = node?.prompt?.trim() ?? "";
+    if (current.length > 0) {
+      const ok = await confirmModal(
+        app,
+        "Change eval mode?",
+        `Replace this node's prompt with the "${mode}" template?\nYour current prompt will be lost.`,
+        "Replace",
+      );
+      if (!ok) {
+        // Keep the prompt; only record the mode flag. The resulting prompt/mode
+        // mismatch is surfaced later by the deferred check-workflow lint.
+        commit(applyEvalModeFlagOnly(doc, nodeId, mode));
+        return;
+      }
+    }
+    commit(applyEvalMode(doc, nodeId, mode));
+  }
+
+  function onBlockOnFail(nodeId: string, value: boolean) {
+    commit(applyBlockOnFail(doc, nodeId, value));
   }
 
   function onMove(nodeId: string, x: number, y: number) {
@@ -271,6 +299,8 @@
       {registry}
       mcpWarnings={mcpNodeWarnings}
       {onMcpServer}
+      {onEvalMode}
+      {onBlockOnFail}
       {resourceSummary}
     />
   </div>

@@ -15,6 +15,10 @@ export interface FlowNodeData {
   label: string;
   prompt?: string;
   mcpServer?: string;
+  /** Eval node mode (config.mode), surfaced for the inspector's mode picker. */
+  evalMode?: string;
+  /** Eval node block-on-fail flag (config.blockOnFail), surfaced for the toggle. */
+  blockOnFail?: boolean;
   inputs: RenderPort[];
   outputs: RenderPort[];
 }
@@ -82,6 +86,8 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
         label: n.label,
         prompt: n.prompt,
         mcpServer: n.config?.mcpServer as string | undefined,
+        evalMode: n.config?.mode as string | undefined,
+        blockOnFail: n.config?.blockOnFail === true,
         inputs: n.inputs.map(markWired(wiredIn)),
         outputs: n.outputs.map(markWired(wiredOut)),
       },

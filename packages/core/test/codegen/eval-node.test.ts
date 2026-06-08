@@ -176,7 +176,11 @@ describe("codegen — eval verdict as a loop sentinel (Karpathy)", () => {
         { id: "draft", kind: "agent", label: "Draft", prompt: "Draft {{in:x}}, applying {{in:fix}}.",
           inputs: [{ id: "in:x", name: "x", schema: { type: "string" } }, { id: "in:fix", name: "fix", schema: { type: "string" } }],
           outputs: [{ id: "out:d", name: "d", schema: { type: "string" } }] },
-        { id: "loop", kind: "loop", label: "Refine", prompt: "Refine {{in:d}} until good. End with EVAL: pass when done.",
+        // The loop prompt deliberately does NOT mention "EVAL:" — that way the
+        // ONLY source of "EVAL:" in the generated code is the sentinel woven into
+        // the break, so the assertion below genuinely guards the sentinel wiring
+        // (a prompt mentioning EVAL would make the toContain check vacuous).
+        { id: "loop", kind: "loop", label: "Refine", prompt: "Refine {{in:d}} until it is good.",
           inputs: [{ id: "in:d", name: "d", schema: { type: "string" } }],
           outputs: [{ id: "out:r", name: "r", schema: { type: "string" } }],
           config: { maxPasses: 3, sentinel: "EVAL:\\s*pass" } },
@@ -190,9 +194,11 @@ describe("codegen — eval verdict as a loop sentinel (Karpathy)", () => {
       ],
     };
     const code = generateClaudeCodeWorkflow(doc);
-    // The loop's break condition uses the EVAL sentinel.
-    expect(code).toContain("EVAL:");
+    // Assert the FULL break shape so the sentinel is pinned INTO the break
+    // condition — not merely that "EVAL:" appears somewhere. The loop emitter
+    // builds `if (/<sentinel>/i.test(String(<loopVar>))) break;`, so this is the
+    // exact bridge between the eval verdict format and the loop machinery.
     expect(code).toContain("for (let pass");
-    expect(code).toContain("break");
+    expect(code).toMatch(/if \(\/EVAL:\\s\*pass\/i\.test\(String\([A-Za-z0-9_]+\)\)\) break;/);
   });
 });

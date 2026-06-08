@@ -43,6 +43,12 @@
     </svg>
   </div>
 
+  {#if data.kind === "mcp"}
+    <div class="pflow-node__service" class:pflow-node__service--unset={!data.mcpServer}>
+      {data.mcpServer ? `↗ ${data.mcpServer}` : "no service"}
+    </div>
+  {/if}
+
   <div class="pflow-node__ports">
     {#each data.inputs as port, i (port.id)}
       <div class="pflow-port pflow-port--in">
@@ -140,6 +146,21 @@
     width: 16px;
     height: 16px;
     color: var(--pflow-accent, var(--text-muted));
+  }
+
+  .pflow-node__service {
+    padding: 2px 10px 4px;
+    font-size: var(--font-ui-smaller);
+    font-weight: 500;
+    color: var(--text-accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pflow-node__service--unset {
+    color: var(--text-error, var(--text-muted));
+    font-style: italic;
+    font-weight: 400;
   }
 
   .pflow-node__ports { padding: 4px 0; }

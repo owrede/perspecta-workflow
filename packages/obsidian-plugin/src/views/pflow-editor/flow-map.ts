@@ -13,6 +13,7 @@ export interface FlowNodeData {
   kind: string;
   label: string;
   prompt?: string;
+  mcpServer?: string;
   inputs: RenderPort[];
   outputs: RenderPort[];
 }
@@ -79,6 +80,7 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
         kind: n.kind,
         label: n.label,
         prompt: n.prompt,
+        mcpServer: n.config?.mcpServer as string | undefined,
         inputs: n.inputs.map(markWired(wiredIn)),
         outputs: n.outputs.map(markWired(wiredOut)),
       },

@@ -88,19 +88,23 @@ export default class PerspectaWorkflowPlugin extends Plugin {
    * Resolve the bundled MCP server's absolute path and build the agent setup
    * prompt. Returns { prompt } when the artifact is present, or { reason } when
    * it is not (e.g. a dev build skipped the bundling step). Desktop-only, so the
-   * adapter is always a FileSystemAdapter — getBasePath() is reliable.
+   * adapter is always a FileSystemAdapter — getFullPath() is reliable.
    */
   async mcpSetupPrompt(): Promise<{ prompt: string } | { reason: string }> {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) {
       return { reason: "MCP setup requires a desktop vault." };
     }
-    // manifest.dir is vault-relative, e.g. ".obsidian/plugins/perspecta-workflow".
-    const relPath = `${this.manifest.dir}/${MCP_SERVER_ARTIFACT}`;
+    // manifest.dir is vault-relative (e.g. ".obsidian/plugins/perspecta-workflow")
+    // and is always set for an installed plugin.
+    const relPath = `${this.manifest.dir!}/${MCP_SERVER_ARTIFACT}`;
     if (!(await adapter.exists(relPath))) {
       return { reason: `Bundled server (${MCP_SERVER_ARTIFACT}) not found in the plugin folder — rebuild the plugin.` };
     }
-    const absPath = `${adapter.getBasePath()}/${relPath}`;
+    // getFullPath turns the vault-relative path into an OS-native absolute path
+    // with correct separators on every platform (needs Obsidian ≥ 1.7.2). The
+    // result is handed to `node` via the agent's .mcp.json.
+    const absPath = adapter.getFullPath(relPath);
     return { prompt: buildMcpSetupPrompt(absPath) };
   }
 

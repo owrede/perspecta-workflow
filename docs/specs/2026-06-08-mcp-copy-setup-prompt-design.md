@@ -79,19 +79,24 @@ built-ins and the full SDK.
 
 A small, pure-where-possible helper that produces the prompt text.
 
-- **Absolute path resolution:** `FileSystemAdapter.getBasePath()` gives the
-  vault's absolute disk path. The plugin's own folder is exposed by Obsidian as
-  `this.plugin.manifest.dir` (a vault-relative path, e.g.
-  `.obsidian/plugins/perspecta-workflow`). Join base path + `manifest.dir` +
-  artifact name:
+- **Absolute path resolution:** the plugin's own folder is exposed by Obsidian
+  as `this.plugin.manifest.dir` (a vault-relative path, e.g.
+  `.obsidian/plugins/perspecta-workflow`). The artifact's vault-relative path is
+  `manifest.dir + "/" + artifact`. To turn that into an OS-native absolute path
+  with correct separators on every platform (including Windows backslashes), use
+  `FileSystemAdapter.getFullPath(relPath)` rather than string-joining
+  `getBasePath()` (which would yield mixed separators on Windows):
 
   ```
-  <getBasePath()>/<manifest.dir>/mcp-server.mjs
-  → /Users/.../MyVault/.obsidian/plugins/perspecta-workflow/mcp-server.mjs
+  adapter.getFullPath(".obsidian/plugins/perspecta-workflow/mcp-server.mjs")
+  → /Users/.../MyVault/.obsidian/plugins/perspecta-workflow/mcp-server.mjs   (POSIX)
+  → C:\Users\...\MyVault\.obsidian\plugins\perspecta-workflow\mcp-server.mjs (Windows)
   ```
 
-  Using `manifest.dir` (rather than reconstructing from `configDir` + id) keeps
-  the path correct even if Obsidian relocates plugin storage.
+  `getFullPath` requires Obsidian ≥ 1.7.2, so `manifest.json` `minAppVersion` is
+  set to `1.7.2`. Using `manifest.dir` (rather than reconstructing from
+  `configDir` + id) keeps the path correct even if Obsidian relocates plugin
+  storage.
 
   Because the plugin is desktop-only (decision 5), the adapter is always a
   `FileSystemAdapter` at runtime, so `getBasePath()` is reliably present.

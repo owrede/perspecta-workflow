@@ -48,6 +48,21 @@ describe("resolveServerGrants", () => {
     expect(g.ask).toEqual(["get_screenshot"]);
     expect(g.blocked).toEqual(["create_file"]);
   });
+
+  it("sorts multiple tools within each bucket (deterministic order)", () => {
+    const multi: McpRegistryServer = {
+      whitelisted: true, probe: { status: "hot" },
+      tools: {
+        zebra: { group: "read", groupSource: "heuristic", permission: "allow" },
+        alpha: { group: "read", groupSource: "heuristic", permission: "allow" },
+        mike:  { group: "read", groupSource: "heuristic", permission: "ask" },
+        bravo: { group: "read", groupSource: "heuristic", permission: "ask" },
+      },
+    };
+    const g = resolveServerGrants(multi);
+    expect(g.allow).toEqual(["alpha", "zebra"]);
+    expect(g.ask).toEqual(["bravo", "mike"]);
+  });
 });
 
 describe("applyGroupPermission", () => {

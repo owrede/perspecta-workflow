@@ -48,8 +48,8 @@ export function resolveServerGrants(server: McpRegistryServer): ServerGrants {
   for (const [name, t] of Object.entries(server.tools)) {
     (t.permission === "allow" ? allow : t.permission === "ask" ? ask : blocked).push(name);
   }
-  const s = (a: string[]) => a.sort();
-  return { allow: s(allow), ask: s(ask), blocked: s(blocked) };
+  const sorted = (a: string[]) => [...a].sort();
+  return { allow: sorted(allow), ask: sorted(ask), blocked: sorted(blocked) };
 }
 
 /** Set the permission of every tool in a group (bulk action). Immutable. */

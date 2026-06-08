@@ -58,6 +58,12 @@ export function varName(doc: PflowDocument, node: PflowNode): string {
   return `${base}_${index}`.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
+/** The generated subagent name (and .md filename stem) for an MCP node:
+ *  "<workflow>-<nodeId>", sanitized to the [A-Za-z0-9_-] agentType charset. */
+export function mcpAgentTypeName(doc: PflowDocument, node: PflowNode): string {
+  return `${doc.workflow.name}-${node.id}`.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
 /** The JS expression that holds the value flowing OUT of a wire's source port.
  *  - input-node source → `args.<argName>` (the specific arg, NOT the whole
  *    `args` object), where argName is the source output port's name. Bracket
@@ -210,8 +216,10 @@ export function buildAgentCall(
   node: PflowNode,
   extraInstruction?: string,
   portOverrides?: Map<string, string>,
+  agentType?: string,
 ): string {
   const label = jsString(node.label);
+  const opts = agentType ? `{ label: ${label}, agentType: ${jsString(agentType)} }` : `{ label: ${label} }`;
   const base = (node.prompt ?? node.label) + (extraInstruction ? `\n\n${extraInstruction}` : "");
 
   // ── Inline token replacement ─────────────────────────────────────────────
@@ -274,7 +282,7 @@ export function buildAgentCall(
     // No interpolation needed (no wired input tokens, no context blocks, no extra
     // instruction). Emit a plain string literal — but use `rewritten`, which has
     // any {{out:NAME}} tokens replaced by their bare names, not the raw base.
-    return `await agent(${jsString(rewritten)}, { label: ${label} })`;
+    return `await agent(${jsString(rewritten)}, ${opts})`;
   }
   // Escape the literal text (sentinels survive), then substitute each sentinel
   // with its `${expr}` interpolation.
@@ -283,7 +291,7 @@ export function buildAgentCall(
     body = body.split(tokenSentinel(i)).join("${" + substitutions[i] + "}");
   }
   const tmpl = "`" + body + blocks.join("") + "`";
-  return `await agent(${tmpl}, { label: ${label} })`;
+  return `await agent(${tmpl}, ${opts})`;
 }
 
 /** The unified result variable for a branch: every arm assigns it, and
@@ -322,6 +330,11 @@ function emitNode(doc: PflowDocument, node: PflowNode, overrides?: Map<string, s
         return `  const ${v} = ${call};\n${multiOutputParse(v, outs)}`;
       }
       return `  const ${v} = ${buildAgentCall(doc, node, undefined, overrides)};`;
+    }
+    case "mcp": {
+      const v = varName(doc, node);
+      const at = mcpAgentTypeName(doc, node);
+      return `  const ${v} = ${buildAgentCall(doc, node, undefined, undefined, at)};`;
     }
     case "output": {
       const v = inputVar(doc, node, overrides);

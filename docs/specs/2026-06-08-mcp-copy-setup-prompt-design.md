@@ -54,18 +54,21 @@ runtime deps) must become a **single self-contained file** placed in the plugin
 folder so it runs with only the user's system `node` — no sibling
 `node_modules`.
 
-- **Artifact:** `mcp-server.cjs` (CommonJS, dependencies inlined) written next
-  to the plugin's `main.js`, `manifest.json`, `styles.css`.
+- **Artifact:** `mcp-server.mjs` (ESM, dependencies inlined) written next
+  to the plugin's `main.js`, `manifest.json`, `styles.css`. ESM (not CJS) is
+  required because the server entry uses top-level await and `import.meta.url`,
+  which CJS cannot host; a `createRequire` banner polyfills `require` for any
+  bundled CJS deps. Node runs a `.mjs` file as ESM regardless of package type.
 - **Build:** a companion esbuild build in the plugin's build pipeline
   (`esbuild.config.mjs`) with `entryPoints: [<mcp-server entry>]`,
-  `bundle: true`, `platform: "node"`, `format: "cjs"`,
-  `outfile: "mcp-server.cjs"`. Unlike the main plugin bundle (which keeps
-  `@modelcontextprotocol/sdk` external), this build **inlines** all runtime deps
-  so the file is standalone. It is a *separate* esbuild invocation from the
-  `platform: "browser"` plugin bundle — they have opposite externals and
-  platforms.
+  `bundle: true`, `platform: "node"`, `format: "esm"`,
+  `outfile: "mcp-server.mjs"`, plus a `createRequire` banner. Unlike the main
+  plugin bundle (which keeps `@modelcontextprotocol/sdk` external), this build
+  **inlines** all runtime deps so the file is standalone. It is a *separate*
+  esbuild invocation from the `platform: "browser"` plugin bundle — they have
+  opposite externals and platforms.
 - **Deploy:** `scripts/deploy-dev.sh` already copies the plugin folder to the
-  test vault; it must include `mcp-server.cjs` in the copied set.
+  test vault; it must include `mcp-server.mjs` in the copied set.
 
 **Why a Node bundle, not the renderer bundle:** the MCP server is spawned by the
 agent as its own Node child process over stdio. It is not loaded into Obsidian's
@@ -83,8 +86,8 @@ A small, pure-where-possible helper that produces the prompt text.
   artifact name:
 
   ```
-  <getBasePath()>/<manifest.dir>/mcp-server.cjs
-  → /Users/.../MyVault/.obsidian/plugins/perspecta-workflow/mcp-server.cjs
+  <getBasePath()>/<manifest.dir>/mcp-server.mjs
+  → /Users/.../MyVault/.obsidian/plugins/perspecta-workflow/mcp-server.mjs
   ```
 
   Using `manifest.dir` (rather than reconstructing from `configDir` + id) keeps
@@ -98,12 +101,12 @@ A small, pure-where-possible helper that produces the prompt text.
   > Add an MCP server to this project so the agent can run Perspecta workflows.
   > Edit (or create) `.mcp.json` at the vault root and add a server entry named
   > `perspecta-workflow` that runs the command `node` with the single argument
-  > `<ABS-PATH>/mcp-server.cjs`. Preserve any existing servers already declared
+  > `<ABS-PATH>/mcp-server.mjs`. Preserve any existing servers already declared
   > in the file. After editing, confirm the `perspecta-workflow` server is
   > registered.
 
   The resulting `.mcp.json` entry the agent should produce is shaped like
-  `{ "command": "node", "args": ["<ABS-PATH>/mcp-server.cjs"] }`, but the prompt
+  `{ "command": "node", "args": ["<ABS-PATH>/mcp-server.mjs"] }`, but the prompt
   states intent in prose and lets the agent own the exact edit.
 
 ### 3. Install-tab UI (plugin settings)
@@ -125,10 +128,10 @@ A new `Setting` row in the Install tab (`packages/obsidian-plugin/src/settings.t
 The desktop-only decision removes the mobile / non-`FileSystemAdapter` branch
 (no disk path). That leaves **one** real guard:
 
-- **Bundled server file missing.** If `mcp-server.cjs` is not present in the
+- **Bundled server file missing.** If `mcp-server.mjs` is not present in the
   plugin folder (e.g. a dev build skipped the bundling step), the setting's desc
   says so and the button does not copy a prompt pointing at a non-existent file.
-  Detected via `adapter.exists(<plugin-relative path to mcp-server.cjs>)`.
+  Detected via `adapter.exists(<plugin-relative path to mcp-server.mjs>)`.
 
 ## Manifest correction (related, independent)
 
@@ -152,11 +155,11 @@ cannot work.
   base path and artifact name, it produces the expected prose with the correctly
   joined absolute path. (Path joining and prompt wording are the logic worth
   pinning.)
-- **Build artifact:** a build-level check that `mcp-server.cjs` is emitted and is
-  self-contained — e.g. running `node mcp-server.cjs` starts the stdio server
+- **Build artifact:** a build-level check that `mcp-server.mjs` is emitted and is
+  self-contained — e.g. running `node mcp-server.mjs` starts the stdio server
   without a sibling `node_modules`. (Manual or a thin smoke step; the existing
   mcp-server test suite already covers server behavior.)
-- **UI:** the missing-file guard path — when `mcp-server.cjs` is absent, the
+- **UI:** the missing-file guard path — when `mcp-server.mjs` is absent, the
   button is inert and the desc reflects it.
 
 ## Out of scope

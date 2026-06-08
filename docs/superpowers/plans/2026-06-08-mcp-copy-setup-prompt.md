@@ -4,7 +4,7 @@
 
 **Goal:** Add an Install-tab "Copy setup prompt" button that copies a natural-language prompt to register the bundled perspecta-workflow MCP server in a coding agent's `.mcp.json`.
 
-**Architecture:** A new esbuild build bundles the mcp-server into a self-contained `mcp-server.cjs` inside the plugin folder. A pure helper builds the natural-language prompt from an absolute server path. The Install-tab UI resolves that path via `FileSystemAdapter.getBasePath()` + `manifest.dir`, guards against a missing artifact, and copies the prompt. The manifest is flipped to `isDesktopOnly: true`.
+**Architecture:** A new esbuild build bundles the mcp-server into a self-contained `mcp-server.mjs` inside the plugin folder. A pure helper builds the natural-language prompt from an absolute server path. The Install-tab UI resolves that path via `FileSystemAdapter.getBasePath()` + `manifest.dir`, guards against a missing artifact, and copies the prompt. The manifest is flipped to `isDesktopOnly: true`.
 
 **Tech Stack:** TypeScript, esbuild, Obsidian plugin API, Vitest.
 
@@ -16,8 +16,8 @@
 
 - **Create** `packages/obsidian-plugin/src/mcp/setupPrompt.ts` — pure prompt-text generator (no Obsidian deps). Sibling of the existing `mcp/mcpJson.ts`.
 - **Create** `packages/obsidian-plugin/test/mcp-setup-prompt.test.ts` — unit tests for the generator.
-- **Modify** `packages/obsidian-plugin/esbuild.config.mjs` — add a second esbuild build that emits `mcp-server.cjs` (deps inlined, `platform: node`).
-- **Modify** `packages/obsidian-plugin/scripts/deploy-dev.sh` — copy `mcp-server.cjs` into the test vault.
+- **Modify** `packages/obsidian-plugin/esbuild.config.mjs` — add a second esbuild build that emits `mcp-server.mjs` (deps inlined, `platform: node`).
+- **Modify** `packages/obsidian-plugin/scripts/deploy-dev.sh` — copy `mcp-server.mjs` into the test vault.
 - **Modify** `packages/obsidian-plugin/manifest.json` — `isDesktopOnly: true`.
 - **Modify** `packages/obsidian-plugin/src/main.ts` — add a `mcpSetupPrompt()` helper that resolves the absolute path + presence and returns prompt-or-reason.
 - **Modify** `packages/obsidian-plugin/src/settings.ts` — add the "Connect a coding agent (MCP)" row to the Install tab.
@@ -42,24 +42,24 @@ import { buildMcpSetupPrompt, MCP_SERVER_ARTIFACT } from "../src/mcp/setupPrompt
 
 describe("buildMcpSetupPrompt", () => {
   it("embeds the absolute server path and the server name", () => {
-    const prompt = buildMcpSetupPrompt("/Users/me/Vault/.obsidian/plugins/perspecta-workflow/mcp-server.cjs");
-    expect(prompt).toContain("/Users/me/Vault/.obsidian/plugins/perspecta-workflow/mcp-server.cjs");
+    const prompt = buildMcpSetupPrompt("/Users/me/Vault/.obsidian/plugins/perspecta-workflow/mcp-server.mjs");
+    expect(prompt).toContain("/Users/me/Vault/.obsidian/plugins/perspecta-workflow/mcp-server.mjs");
     expect(prompt).toContain("perspecta-workflow");
     expect(prompt).toContain(".mcp.json");
   });
 
   it("instructs node as the command", () => {
-    const prompt = buildMcpSetupPrompt("/abs/mcp-server.cjs");
+    const prompt = buildMcpSetupPrompt("/abs/mcp-server.mjs");
     expect(prompt).toContain("node");
   });
 
   it("instructs preserving existing servers", () => {
-    const prompt = buildMcpSetupPrompt("/abs/mcp-server.cjs");
+    const prompt = buildMcpSetupPrompt("/abs/mcp-server.mjs");
     expect(prompt.toLowerCase()).toContain("preserve");
   });
 
   it("exposes the artifact filename constant", () => {
-    expect(MCP_SERVER_ARTIFACT).toBe("mcp-server.cjs");
+    expect(MCP_SERVER_ARTIFACT).toBe("mcp-server.mjs");
   });
 });
 ```
@@ -75,7 +75,7 @@ Create `packages/obsidian-plugin/src/mcp/setupPrompt.ts`:
 
 ```typescript
 /** Filename of the bundled MCP server artifact shipped inside the plugin folder. */
-export const MCP_SERVER_ARTIFACT = "mcp-server.cjs";
+export const MCP_SERVER_ARTIFACT = "mcp-server.mjs";
 
 /** Name the perspecta-workflow server is registered under in the agent's .mcp.json. */
 export const MCP_SERVER_NAME = "perspecta-workflow";
@@ -85,7 +85,7 @@ export const MCP_SERVER_NAME = "perspecta-workflow";
  * vault. The agent edits .mcp.json itself — we state intent and the exact
  * command/path, and let the agent own the file format and merge.
  *
- * @param serverAbsPath absolute disk path to the bundled mcp-server.cjs
+ * @param serverAbsPath absolute disk path to the bundled mcp-server.mjs
  */
 export function buildMcpSetupPrompt(serverAbsPath: string): string {
   return [
@@ -119,7 +119,7 @@ git commit -m "feat(plugin): pure MCP setup-prompt generator"
 
 The existing build produces `main.js` (`platform: browser`, SDK external). Add a
 **separate** build for the server: `platform: node`, deps **inlined**, emitting
-`mcp-server.cjs`. The entry is the workspace sibling source
+`mcp-server.mjs`. The entry is the workspace sibling source
 `../mcp-server/src/server.ts` (esbuild compiles TS and resolves the
 `@perspecta/core` + SDK workspace deps, inlining them).
 
@@ -138,12 +138,20 @@ In `packages/obsidian-plugin/esbuild.config.mjs`, after the existing plugin
 const serverCtx = await esbuild.context({
   entryPoints: ["../mcp-server/src/server.ts"],
   bundle: true,
-  format: "cjs",
+  // The server entry uses top-level await and import.meta.url, which require
+  // ESM format. CJS does not support either. We emit .mjs so Node treats the
+  // file as ESM regardless of the nearest package.json's "type" field.
+  // The banner polyfills `require` for bundled CJS deps (e.g. yaml) whose
+  // dynamic require() calls would otherwise throw in an ESM context.
+  format: "esm",
   platform: "node",
   target: "node18",
-  outfile: "mcp-server.cjs",
+  outfile: "mcp-server.mjs",
   sourcemap: false,
   logLevel: "info",
+  banner: {
+    js: `import { createRequire } from "module"; const require = createRequire(import.meta.url);`,
+  },
   // No externals: the server must run with only the user's system `node`.
 });
 
@@ -153,12 +161,12 @@ if (watch) { await serverCtx.watch(); } else { await serverCtx.rebuild(); await 
 - [ ] **Step 2: Run the build**
 
 Run: `npm run build -w perspecta-workflow-plugin`
-Expected: build completes; `packages/obsidian-plugin/mcp-server.cjs` now exists.
+Expected: build completes; `packages/obsidian-plugin/mcp-server.mjs` now exists.
 
 - [ ] **Step 3: Verify the artifact exists and is non-trivial**
 
-Run: `ls -la packages/obsidian-plugin/mcp-server.cjs && head -c 200 packages/obsidian-plugin/mcp-server.cjs`
-Expected: file present, size well over 100 KB (SDK + core inlined), starts with bundled CJS preamble.
+Run: `ls -la packages/obsidian-plugin/mcp-server.mjs && head -c 200 packages/obsidian-plugin/mcp-server.mjs`
+Expected: file present, size well over 100 KB (SDK + core inlined), starts with the `createRequire` ESM banner.
 
 - [ ] **Step 4: Verify the server is self-contained (runs with only node)**
 
@@ -166,16 +174,16 @@ The stdio server reads from stdin and does not exit on its own. Confirm it
 starts without a missing-module crash by feeding it empty stdin with a short
 timeout — a clean start produces no `Cannot find module` / `ERR_MODULE_NOT_FOUND`:
 
-Run: `printf '' | node packages/obsidian-plugin/mcp-server.cjs & PID=$!; sleep 1; kill $PID 2>/dev/null; echo "started cleanly"`
+Run: `printf '' | node packages/obsidian-plugin/mcp-server.mjs & PID=$!; sleep 1; kill $PID 2>/dev/null; echo "started cleanly"`
 Expected: prints `started cleanly` with no `Cannot find module` / `Error` output above it.
 
 - [ ] **Step 5: Ignore the build artifact in git**
 
-Confirm `mcp-server.cjs` is not tracked (it is a build output, like `main.js` and `styles.css`). Check how the existing outputs are ignored:
+Confirm `mcp-server.mjs` is not tracked (it is a build output, like `main.js` and `styles.css`). Check how the existing outputs are ignored:
 
-Run: `git check-ignore packages/obsidian-plugin/main.js packages/obsidian-plugin/mcp-server.cjs; cat packages/obsidian-plugin/.gitignore 2>/dev/null; cat .gitignore | grep -n "main.js\|styles.css\|obsidian-plugin" `
+Run: `git check-ignore packages/obsidian-plugin/main.js packages/obsidian-plugin/mcp-server.mjs; cat packages/obsidian-plugin/.gitignore 2>/dev/null; cat .gitignore | grep -n "main.js\|styles.css\|obsidian-plugin" `
 
-If `main.js` is ignored but `mcp-server.cjs` is not, add `mcp-server.cjs` next to the `main.js` entry in whichever `.gitignore` lists it (mirror the existing pattern — same file, same style). If `main.js` is NOT ignored (i.e. build outputs are committed in this repo), do nothing here.
+If `main.js` is ignored but `mcp-server.mjs` is not, add `mcp-server.mjs` next to the `main.js` entry in whichever `.gitignore` lists it (mirror the existing pattern — same file, same style). If `main.js` is NOT ignored (i.e. build outputs are committed in this repo), do nothing here.
 
 - [ ] **Step 6: Commit**
 
@@ -184,7 +192,7 @@ git add packages/obsidian-plugin/esbuild.config.mjs
 # include the .gitignore only if you edited it in Step 5:
 git add packages/obsidian-plugin/.gitignore 2>/dev/null || true
 git add .gitignore 2>/dev/null || true
-git commit -m "build(plugin): bundle mcp-server into self-contained mcp-server.cjs"
+git commit -m "build(plugin): bundle mcp-server into self-contained mcp-server.mjs"
 ```
 
 ---
@@ -194,7 +202,7 @@ git commit -m "build(plugin): bundle mcp-server into self-contained mcp-server.c
 **Files:**
 - Modify: `packages/obsidian-plugin/scripts/deploy-dev.sh`
 
-- [ ] **Step 1: Add `mcp-server.cjs` to the copied artifacts**
+- [ ] **Step 1: Add `mcp-server.mjs` to the copied artifacts**
 
 In `packages/obsidian-plugin/scripts/deploy-dev.sh`, change the copy loop line:
 
@@ -205,19 +213,19 @@ for f in main.js manifest.json styles.css versions.json preload.js; do
 to:
 
 ```bash
-for f in main.js manifest.json styles.css versions.json preload.js mcp-server.cjs; do
+for f in main.js manifest.json styles.css versions.json preload.js mcp-server.mjs; do
 ```
 
 - [ ] **Step 2: Verify deploy copies it (no-op safe when vault absent)**
 
 Run: `npm run deploy -w perspecta-workflow-plugin`
-Expected: build runs, then either `deploy-dev: copied N artifact(s)` (vault present) or `deploy-dev: vault not found ... skipping` (exit 0). If the vault is present, N includes `mcp-server.cjs`.
+Expected: build runs, then either `deploy-dev: copied N artifact(s)` (vault present) or `deploy-dev: vault not found ... skipping` (exit 0). If the vault is present, N includes `mcp-server.mjs`.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add packages/obsidian-plugin/scripts/deploy-dev.sh
-git commit -m "build(plugin): deploy mcp-server.cjs into the dev vault"
+git commit -m "build(plugin): deploy mcp-server.mjs into the dev vault"
 ```
 
 ---
@@ -412,7 +420,7 @@ Expected: no errors. (Note `Setting` and `Notice` are already imported in `setti
 - [ ] **Step 3: Build the plugin**
 
 Run: `npm run build -w perspecta-workflow-plugin`
-Expected: build succeeds; both `main.js` and `mcp-server.cjs` are produced.
+Expected: build succeeds; both `main.js` and `mcp-server.mjs` are produced.
 
 - [ ] **Step 4: Manual verification in the dev vault**
 
@@ -422,7 +430,7 @@ Then in Obsidian (dev vault), reload the plugin and:
 1. Open Settings → Perspecta Workflow → Install tab.
 2. Confirm the "Connect a coding agent (MCP)" row appears with an enabled "Copy setup prompt" button.
 3. Click it → expect the Notice "Setup prompt copied …".
-4. Paste into a scratch note → expect the prompt text containing the absolute path ending in `/.obsidian/plugins/perspecta-workflow/mcp-server.cjs`.
+4. Paste into a scratch note → expect the prompt text containing the absolute path ending in `/.obsidian/plugins/perspecta-workflow/mcp-server.mjs`.
 
 Expected: all four hold. (If the vault isn't available on this machine, note that Step 4 is deferred to a machine with the dev vault; Steps 1–3 of this task plus all automated tests still gate the change.)
 
@@ -450,7 +458,7 @@ Expected: all workspaces build.
 - [ ] **Step 3: Confirm the spec's requirements are met**
 
 Re-read `docs/specs/2026-06-08-mcp-copy-setup-prompt-design.md` and confirm:
-- Bundled `mcp-server.cjs` emitted into the plugin folder ✔ (Task 2)
+- Bundled `mcp-server.mjs` emitted into the plugin folder ✔ (Task 2)
 - Deploy ships it ✔ (Task 3)
 - Natural-language prompt, path embedded, preserve existing servers ✔ (Task 1)
 - Install-tab button + missing-artifact guard ✔ (Tasks 5–6)
@@ -462,7 +470,7 @@ No commit needed if Steps 1–2 are clean and prior tasks are committed.
 
 ## Notes for the implementer
 
-- **Workspace test command:** this repo runs Vitest per workspace. `npm test -w perspecta-workflow-plugin -- <pattern>` filters by filename substring. Tests import source as `../src/<path>.js` (note the `.js` extension on the import even though the file is `.ts` — that is the repo convention; see `test/mcp-json.test.ts`).
+- **Test commands:** the full plugin suite is `npm test -w perspecta-workflow-plugin`. To run/filter a SINGLE test file, use `npx vitest run <path/to/file.test.ts>` from the repo root — the `npm test -w … -- <pattern>` form does NOT thread the pattern through to Vitest (it errors "No test files found"), because Vitest is configured at the repo root with `include: ["packages/*/test/**/*.test.ts"]`. Tests import source as `../src/<path>.js` (note the `.js` extension on the import even though the file is `.ts` — that is the repo convention; see `test/mcp-json.test.ts`).
 - **Two esbuild builds, opposite settings:** the main bundle is `platform: browser` with `@modelcontextprotocol/sdk` **external**; the server bundle is `platform: node` with **everything inlined**. Do not merge them.
 - **`navigator.clipboard`** is available in Obsidian's Electron renderer; this is the first clipboard write in the plugin, which is fine.
 - **No npm publish, no repo-path dependency:** the prompt always points at the artifact inside the installed plugin folder, resolved at click time from the live vault path.

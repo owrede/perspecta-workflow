@@ -1,4 +1,4 @@
-import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile } from "obsidian";
+import { App, Plugin, Notice, WorkspaceLeaf, SuggestModal, TFile, FileSystemAdapter } from "obsidian";
 import { VERSION, isWorkflowCanvas, type NodeType, type PflowDocument } from "@perspecta/core";
 import { PERSPECTA_UI_VERSION, PerspectaSettingsStore, CornerBadge } from "perspecta-ui";
 import { WorkflowSkillSyncService } from "./skills/WorkflowSkillSyncService.js";
@@ -15,6 +15,7 @@ import { exportClaudeCodeWorkflowFile, formatConnectorSuffix } from "./commands/
 import { PflowEditorView, VIEW_TYPE_PFLOW } from "./views/pflow-editor/view.js";
 import { applyMcpExpectedGrants } from "./views/pflow-editor/flow-map.js";
 import { parseMcpJsonServers } from "./mcp/mcpJson.js";
+import { buildMcpSetupPrompt, MCP_SERVER_ARTIFACT } from "./mcp/setupPrompt.js";
 import { NodeMcpProbe, probedToolsToRegistry } from "./mcp/probe.js";
 
 interface NoteFileRef { id: string; file: string; }
@@ -81,6 +82,26 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   async listMcpServers() {
     if (!(await this.app.vault.adapter.exists(".mcp.json"))) return [];
     return parseMcpJsonServers(await this.app.vault.adapter.read(".mcp.json"));
+  }
+
+  /**
+   * Resolve the bundled MCP server's absolute path and build the agent setup
+   * prompt. Returns { prompt } when the artifact is present, or { reason } when
+   * it is not (e.g. a dev build skipped the bundling step). Desktop-only, so the
+   * adapter is always a FileSystemAdapter — getBasePath() is reliable.
+   */
+  async mcpSetupPrompt(): Promise<{ prompt: string } | { reason: string }> {
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) {
+      return { reason: "MCP setup requires a desktop vault." };
+    }
+    // manifest.dir is vault-relative, e.g. ".obsidian/plugins/perspecta-workflow".
+    const relPath = `${this.manifest.dir}/${MCP_SERVER_ARTIFACT}`;
+    if (!(await adapter.exists(relPath))) {
+      return { reason: `Bundled server (${MCP_SERVER_ARTIFACT}) not found in the plugin folder — rebuild the plugin.` };
+    }
+    const absPath = `${adapter.getBasePath()}/${relPath}`;
+    return { prompt: buildMcpSetupPrompt(absPath) };
   }
 
   /** Probe one server (cold→hot): launch it, list its tools, cache them in the

@@ -7,7 +7,7 @@ import {
   wiredText,
   wiredToggle,
 } from "perspecta-ui";
-import type { McpRegistry } from "@perspecta/core";
+import { applyGroupPermission, type McpRegistry, type McpToolGroup, type McpToolPermission } from "@perspecta/core";
 import type PerspectaWorkflowPlugin from "./main.js";
 import { bundledSkillWrites } from "./skills/bundledSkills.js";
 import { CHANGELOG } from "./changelog.generated.js";
@@ -74,6 +74,13 @@ export class PerspectaSettingTab extends PluginSettingTab {
             });
           },
         },
+        {
+          id: "mcp",
+          label: "MCP",
+          render: (el) => {
+            void this.renderMcpTab(el);
+          },
+        },
       ],
       debugTab: {
         render: (el) => {
@@ -85,5 +92,64 @@ export class PerspectaSettingTab extends PluginSettingTab {
         },
       },
     });
+  }
+
+  private async renderMcpTab(el: HTMLElement): Promise<void> {
+    el.empty();
+    const plugin = this.plugin;
+    const servers = await plugin.listMcpServers();
+    if (servers.length === 0) {
+      renderInfoBox(el, { variant: "info", title: "No MCP servers", body: "No .mcp.json found at the vault root, or it declares no servers." });
+      return;
+    }
+    for (const s of servers) {
+      const reg = plugin.settings.mcpRegistry[s.name];
+      const status = reg?.probe.status ?? "cold";
+      const desc = reg?.whitelisted ? `${status}${reg.probe.error ? ` — ${reg.probe.error}` : ""}` : "not whitelisted";
+      const head = new Setting(el).setName(s.name).setDesc(desc);
+      head.addToggle((t) =>
+        t.setValue(!!reg?.whitelisted).onChange(async (v) => {
+          if (v) {
+            await plugin.probeMcpServer(s.name);
+          } else {
+            const next = { ...plugin.settings.mcpRegistry };
+            delete next[s.name];
+            plugin.settings.mcpRegistry = next;
+            await plugin.saveSettings();
+          }
+          await this.renderMcpTab(el); // re-render this tab in place
+        }),
+      );
+      if (reg?.whitelisted && reg.probe.status === "hot") {
+        head.addExtraButton((b) =>
+          b.setIcon("refresh-cw").setTooltip("Re-probe").onClick(async () => {
+            await plugin.probeMcpServer(s.name);
+            await this.renderMcpTab(el);
+          }),
+        );
+        for (const group of ["read", "write"] as McpToolGroup[]) {
+          const groupTools = Object.entries(reg.tools).filter(([, t]) => t.group === group);
+          if (groupTools.length === 0) continue;
+          const groupHead = new Setting(el).setName(group === "read" ? "Read tools" : "Write tools").setHeading();
+          groupHead.addButton((btn) =>
+            btn.setButtonText("Block all").onClick(async () => {
+              plugin.settings.mcpRegistry[s.name] = applyGroupPermission(plugin.settings.mcpRegistry[s.name], group, "blocked");
+              await plugin.saveSettings();
+              await this.renderMcpTab(el);
+            }),
+          );
+          for (const [tool, t] of groupTools) {
+            new Setting(el).setName(tool).setDesc(t.description ?? "").addDropdown((d) =>
+              d.addOptions({ blocked: "Blocked", ask: "Ask", allow: "Always allow" })
+                .setValue(t.permission)
+                .onChange(async (v) => {
+                  plugin.settings.mcpRegistry[s.name].tools[tool].permission = v as McpToolPermission;
+                  await plugin.saveSettings();
+                }),
+            );
+          }
+        }
+      }
+    }
   }
 }

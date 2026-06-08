@@ -13,6 +13,8 @@ import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from ".
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
 import { exportClaudeCodeWorkflowFile } from "./commands/exportWorkflow.js";
 import { PflowEditorView, VIEW_TYPE_PFLOW } from "./views/pflow-editor/view.js";
+import { parseMcpJsonServers } from "./mcp/mcpJson.js";
+import { NodeMcpProbe, probedToolsToRegistry } from "./mcp/probe.js";
 
 interface NoteFileRef { id: string; file: string; }
 
@@ -72,6 +74,33 @@ export default class PerspectaWorkflowPlugin extends Plugin {
 
   agentInstallStatus(): Promise<{ installedSkills: number; hasRegistry: boolean; hasPointer: boolean }> {
     return this.skills.agentInstallStatus();
+  }
+
+  /** List the MCP servers declared in the vault's .mcp.json (empty if none). */
+  async listMcpServers() {
+    if (!(await this.app.vault.adapter.exists(".mcp.json"))) return [];
+    return parseMcpJsonServers(await this.app.vault.adapter.read(".mcp.json"));
+  }
+
+  /** Probe one server (cold→hot): launch it, list its tools, cache them in the
+   *  registry with default "ask" permission. Sets status probing→hot, or
+   *  failed+error. Persists settings. */
+  async probeMcpServer(name: string): Promise<void> {
+    const server = (await this.listMcpServers()).find((s) => s.name === name);
+    if (!server) return;
+    const reg = { ...this.settings.mcpRegistry };
+    reg[name] = { whitelisted: true, probe: { status: "probing" }, tools: reg[name]?.tools ?? {} };
+    this.settings.mcpRegistry = reg;
+    await this.saveSettings();
+    try {
+      const tools = await new NodeMcpProbe().probe(server);
+      reg[name] = { whitelisted: true, probe: { status: "hot", probedAt: new Date().toISOString() }, tools: probedToolsToRegistry(tools) };
+    } catch (e) {
+      reg[name] = { whitelisted: true, probe: { status: "failed", error: (e as Error).message }, tools: reg[name]?.tools ?? {} };
+    }
+    this.settings.mcpRegistry = { ...reg };
+    await this.saveSettings();
+    new Notice(`Perspecta: probed ${name} — ${reg[name].probe.status}`);
   }
 
   private activeCanvas(): TFile | null {

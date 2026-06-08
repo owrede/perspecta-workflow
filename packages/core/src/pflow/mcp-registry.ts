@@ -3,8 +3,8 @@ import type { PflowDocument } from "./schema.js";
 /** Per-tool permission, modelled on the Claude app (Blocked / Ask / Always-allow). */
 export type McpToolPermission = "blocked" | "ask" | "allow";
 
-/** Read/write grouping (UI grouping + bulk action only; NOT a runtime semantic). */
-export type McpToolGroup = "read" | "write";
+/** Read/interactive/write grouping (UI grouping + bulk action only; NOT a runtime semantic). */
+export type McpToolGroup = "read" | "interactive" | "write";
 
 /** Optional MCP tool annotations (many servers omit these). */
 export interface McpToolAnnotations {
@@ -29,16 +29,18 @@ export interface McpRegistryServer {
 export type McpRegistry = Record<string, McpRegistryServer>;
 
 const READ_VERBS = /^(get|list|search|read|fetch|describe|view|find|query|show)(_|$)|_(get|list|search|read|fetch|describe|view)(_|$)/i;
-const WRITE_VERBS = /^(create|update|delete|write|set|add|remove|put|post|patch|insert|upsert|send|move|rename)(_|$)/i;
+const WRITE_VERBS = /^(create|update|delete|write|set|add|remove|put|post|patch|insert|upsert|send|rename)(_|$)/i;
 
-/** Classify a tool into read/write: annotations win; else a name/verb heuristic;
- *  unknown → write (the safe side). Pure. */
+/** Classify a tool into read/interactive/write: annotations win; else a name/verb heuristic;
+ *  unknown → interactive (the middle bucket). Pure. */
 export function classifyToolGroup(name: string, ann?: McpToolAnnotations): McpToolGroup {
   if (ann?.readOnlyHint === true) return "read";
   if (ann?.destructiveHint === true) return "write";
+  // If both hints are explicitly present and both false, no annotation is decisive → interactive.
+  if (ann && "readOnlyHint" in ann && "destructiveHint" in ann) return "interactive";
   if (READ_VERBS.test(name) && !WRITE_VERBS.test(name)) return "read";
   if (WRITE_VERBS.test(name)) return "write";
-  return "write"; // unknown → safe side
+  return "interactive"; // unknown → middle bucket
 }
 
 /** The tool-name sets a server grant resolves to, for codegen + summaries. */

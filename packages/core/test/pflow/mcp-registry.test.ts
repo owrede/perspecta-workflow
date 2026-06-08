@@ -19,12 +19,14 @@ describe("classifyToolGroup", () => {
     expect(classifyToolGroup("delete_node")).toBe("write");
     expect(classifyToolGroup("update_row")).toBe("write");
   });
-  it("classifies an unknown verb as write (safe side)", () => {
-    expect(classifyToolGroup("frobnicate")).toBe("write");
+  it("classifies a neutral/unknown verb as interactive (the middle bucket)", () => {
+    expect(classifyToolGroup("frobnicate")).toBe("interactive");
+    expect(classifyToolGroup("move_file")).toBe("interactive");
+  });
+  it("treats both-hints-false (no decisive verb) as interactive", () => {
+    expect(classifyToolGroup("create_directory", { readOnlyHint: false, destructiveHint: false })).toBe("interactive");
   });
   it("classifies a write verb with an underscore suffix as write (not read)", () => {
-    // `\b` regression: create_view must be write, not read (the trailing _view
-    // must not pull it into the read group).
     expect(classifyToolGroup("create_view")).toBe("write");
     expect(classifyToolGroup("set_readonly_flag")).toBe("write");
     expect(classifyToolGroup("update_design")).toBe("write");

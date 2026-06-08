@@ -134,6 +134,10 @@ export function emitBranchRegion(doc: PflowDocument, region: BranchRegion, emitO
   });
 
   const decl = reconverges ? [`  let ${resultVar};`] : [];
+  // Hard quality gate (eval blockOnFail): a `fail` verdict throws BEFORE the
+  // dispatch arms run, so any nodes wired onto the fail arm are intentionally
+  // superseded — a failed gate aborts everything downstream. The EVAL verdict
+  // vocabulary is pass/fail by the eval node's output-port contract.
   const gate = region.blockOnFail
     ? [`  if (/${region.verb}:\\s*fail/i.test(String(${choiceVar}))) throw new Error(${jsString(`Quality gate failed: ${branch.label}`)});`]
     : [];

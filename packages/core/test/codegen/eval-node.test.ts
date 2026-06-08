@@ -46,6 +46,12 @@ describe("codegen — eval node", () => {
     const code = generateClaudeCodeWorkflow(evalDoc(true));
     expect(code).toContain("Quality gate failed");
     expect(code).toContain("throw new Error");
+    // The hard gate must precede the dispatch arms (else it would be dead code).
+    const throwIdx = code.indexOf("Quality gate failed");
+    const dispatchIdx = code.indexOf("EVAL:\\s*pass");
+    expect(throwIdx).toBeGreaterThanOrEqual(0);
+    expect(dispatchIdx).toBeGreaterThanOrEqual(0);
+    expect(throwIdx).toBeLessThan(dispatchIdx);
   });
 
   it("treats a missing blockOnFail flag as no gate", () => {

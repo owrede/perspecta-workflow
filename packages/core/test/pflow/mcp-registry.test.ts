@@ -79,3 +79,32 @@ describe("applyGroupPermission", () => {
     expect(server.tools.create_file.permission).toBe("blocked"); // original preserved
   });
 });
+
+import { snapshotGrants, isPolicyStricter } from "../../src/pflow/mcp-registry.js";
+
+describe("snapshotGrants / isPolicyStricter", () => {
+  const hot: McpRegistryServer = {
+    whitelisted: true, probe: { status: "hot" },
+    tools: {
+      a: { group: "read", groupSource: "heuristic", permission: "allow" },
+      b: { group: "write", groupSource: "heuristic", permission: "ask" },
+    },
+  };
+  it("snapshots tool→permission", () => {
+    expect(snapshotGrants(hot)).toEqual({ a: "allow", b: "ask" });
+  });
+  it("flags a tool downgraded vs the snapshot as stricter", () => {
+    // snapshot expected a=allow; local now blocks a → stricter
+    const local = { ...hot, tools: { ...hot.tools, a: { ...hot.tools.a, permission: "blocked" as const } } };
+    expect(isPolicyStricter({ a: "allow", b: "ask" }, local)).toEqual(["a"]);
+  });
+  it("returns [] when local is equal or looser", () => {
+    const looser = { ...hot, tools: { ...hot.tools, b: { ...hot.tools.b, permission: "allow" as const } } };
+    expect(isPolicyStricter({ a: "allow", b: "ask" }, looser)).toEqual([]);
+  });
+  it("treats a tool absent from the local registry as blocked (strictest)", () => {
+    const empty: McpRegistryServer = { whitelisted: true, probe: { status: "hot" }, tools: {} };
+    // expected a=allow, but local has no `a` at all → absent = blocked = stricter
+    expect(isPolicyStricter({ a: "allow" }, empty)).toEqual(["a"]);
+  });
+});

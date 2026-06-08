@@ -64,3 +64,27 @@ export function applyGroupPermission(
   }
   return { ...server, tools };
 }
+
+/** Snapshot tool→permission for a server (stored on an mcp node at export). Pure. */
+export function snapshotGrants(server: McpRegistryServer): Record<string, McpToolPermission> {
+  const out: Record<string, McpToolPermission> = {};
+  for (const [name, t] of Object.entries(server.tools)) out[name] = t.permission;
+  return out;
+}
+
+// Permission strength ordering: allow (loosest) > ask > blocked (strictest).
+const STRENGTH: Record<McpToolPermission, number> = { allow: 2, ask: 1, blocked: 0 };
+
+/** Tool names whose LOCAL permission is STRICTER than the snapshot expected.
+ *  A tool absent locally counts as blocked (strictest). Pure. */
+export function isPolicyStricter(
+  expected: Record<string, McpToolPermission>,
+  local: McpRegistryServer,
+): string[] {
+  const stricter: string[] = [];
+  for (const [name, exp] of Object.entries(expected)) {
+    const localPerm = local.tools[name]?.permission ?? "blocked";
+    if (STRENGTH[localPerm] < STRENGTH[exp]) stricter.push(name);
+  }
+  return stricter.sort();
+}

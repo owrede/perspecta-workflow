@@ -102,14 +102,14 @@ export class PerspectaSettingTab extends PluginSettingTab {
   private async renderMcpSetupRow(el: HTMLElement): Promise<void> {
     const setup = await this.plugin.mcpSetupPrompt();
     const row = new Setting(el)
-      .setName("Connect a coding agent (MCP)")
+      .setName("Import the agent's MCP servers")
       .setDesc(
         "reason" in setup
           ? setup.reason
-          : "Copies a prompt to paste into a coding agent running in this vault. It registers the bundled perspecta-workflow MCP server so the agent can run your workflows.",
+          : "Copies a prompt to paste into a coding agent running in this vault. The agent records every MCP server it has configured into this vault's .mcp.json (including the bundled perspecta-workflow server) so the MCP tab can manage them all.",
       );
     row.addButton((btn) => {
-      btn.setButtonText("Copy setup prompt");
+      btn.setButtonText("Copy import prompt");
       if ("reason" in setup) {
         btn.setDisabled(true).setTooltip(setup.reason);
       } else {
@@ -119,7 +119,7 @@ export class PerspectaSettingTab extends PluginSettingTab {
           // surface the failure rather than leaving an unhandled rejection.
           try {
             await navigator.clipboard.writeText(setup.prompt);
-            new Notice("Setup prompt copied — paste it into your coding agent running in this vault.");
+            new Notice("Import prompt copied — paste it into your coding agent running in this vault.");
           } catch {
             new Notice("Perspecta Workflow: could not write to clipboard.");
           }

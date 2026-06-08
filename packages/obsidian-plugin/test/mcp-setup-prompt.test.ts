@@ -34,6 +34,22 @@ describe("buildMcpSetupPrompt", () => {
     expect(prompt).toContain("${"); // an ${ENV_VAR}-style placeholder example
   });
 
+  it("directs an ABSOLUTE node path for perspecta-workflow (plugin spawns it, no PATH)", () => {
+    const prompt = buildMcpSetupPrompt(ABS);
+    expect(prompt.toLowerCase()).toContain("absolute");
+    expect(prompt).toContain("which node"); // how the agent resolves it
+  });
+
+  it("tells the agent to enumerate via the Claude Code CLI", () => {
+    expect(buildMcpSetupPrompt(ABS)).toContain("claude mcp list");
+  });
+
+  it("includes a final validate-and-report step", () => {
+    const prompt = buildMcpSetupPrompt(ABS).toLowerCase();
+    expect(prompt).toContain("valid json");
+    expect(prompt).toContain("report");
+  });
+
   it("exposes the artifact filename constant", () => {
     expect(MCP_SERVER_ARTIFACT).toBe("mcp-server.mjs");
   });

@@ -1,27 +1,31 @@
-# Copy setup prompt — wire the perspecta-workflow MCP server into a coding agent
+# Import MCP servers — wire the agent's MCP servers (incl. perspecta-workflow) into the vault
 
-**Date:** 2026-06-08
-**Status:** Design — approved, pending plan
+**Date:** 2026-06-08 (updated after shipping; goal broadened from one server to all)
+**Status:** Shipped; prompt refined
 **Scope:** `packages/obsidian-plugin` (Install tab UI, build), `packages/obsidian-plugin/manifest.json`
 
 ## Problem
 
 The perspecta-workflow MCP server is what lets a coding agent (Claude Code) in
 the vault directory actually *run* workflows. But there is no one-click way to
-connect it:
+connect it — and more broadly, the plugin's MCP tab can only manage servers that
+already appear in the vault's `.mcp.json`, which is usually empty:
 
 - The MCP server (`@perspecta/mcp-server`) lives in the monorepo and is **not
   published to npm**. The plugin ships separately, so the server does not
   currently travel with it.
-- The existing MCP settings tab only **reads** servers already declared in
-  `.mcp.json` at the vault root and lets the user whitelist / set permissions on
-  them. Nothing **writes** the perspecta-workflow server into the agent's MCP
-  config.
-- Result: the user wires it by hand, against a server binary that does not yet
-  exist on their machine in a runnable form.
+- The MCP settings tab only **reads** servers declared in `.mcp.json` at the
+  vault root. Nothing **writes** servers into it — neither perspecta-workflow nor
+  the many MCP servers the agent already has configured across its own scopes.
+- Result: the tab is blind to most of what the agent can do, and the user wires
+  everything by hand.
 
 We are building the on-ramp: a button that hands the user a prompt they paste
-into their coding agent, which then registers the server.
+into their coding agent. The agent then **imports every MCP server it has
+configured** (user/project/managed scopes) into the vault's `.mcp.json`, ensuring
+the bundled perspecta-workflow server is among them — so the MCP tab can see and
+manage all of them. (The original scope was just registering perspecta-workflow;
+it was broadened to all servers per the user's correction.)
 
 ## Decisions (locked)
 
@@ -29,11 +33,12 @@ into their coding agent, which then registers the server.
    the plugin folder (`<vault>/.obsidian/plugins/perspecta-workflow/`), so it is
    self-contained and version-coherent with the installed plugin. No npm, no
    repo-path dependency.
-2. **Prompt style: natural-language instruction.** The button copies a
-   human-readable instruction telling the agent what to do. The agent performs
-   the edit — merging with existing servers, handling `.mcp.json` format,
-   validating — rather than the plugin emitting raw JSON or a CLI command tied to
-   one client.
+2. **Prompt style: natural-language instruction; imports ALL the agent's
+   servers.** The button copies a human-readable, numbered instruction telling
+   the agent to enumerate every MCP server it has (across scopes), ensure
+   perspecta-workflow is included, and MERGE them all into `.mcp.json`. The agent
+   performs the edit — handling format, merge, secret redaction, validation —
+   rather than the plugin emitting raw JSON or a client-specific CLI command.
 3. **Placement: the Install tab.** Grouped with the existing "Install agent
    skills" action, since both are agent setup. The MCP tab stays purely about
    server discovery and per-tool permissions.
@@ -102,17 +107,29 @@ A small, pure-where-possible helper that produces the prompt text.
   Because the plugin is desktop-only (decision 5), the adapter is always a
   `FileSystemAdapter` at runtime, so `getBasePath()` is reliably present.
 
-- **Prompt text (natural language, path embedded):**
+- **Prompt text (natural language, numbered, path embedded).** The pure helper
+  `buildMcpSetupPrompt(serverAbsPath)` (in `src/mcp/setupPrompt.ts`) returns a
+  5-step instruction. The steps:
 
-  > Add an MCP server to this project so the agent can run Perspecta workflows.
-  > Edit (or create) `.mcp.json` at the vault root and add a server entry named
-  > `perspecta-workflow` that runs the command `node` with the single argument
-  > `<ABS-PATH>/mcp-server.mjs`. Preserve any existing servers already declared
-  > in the file. After editing, confirm the `perspecta-workflow` server is
-  > registered.
+  1. **Enumerate** every MCP server across all scopes (prefer `claude mcp list` /
+     `claude mcp get <name>`; else read config), capturing name, transport, and
+     launch details.
+  2. **Ensure perspecta-workflow is included** as a stdio server. Because the
+     *plugin itself* spawns this one (outside a shell, no PATH), its `command`
+     must be an ABSOLUTE node path (`which node`), with `args` =
+     `["<ABS-PATH>/mcp-server.mjs"]`. Other servers keep bare commands — the
+     plugin's probe augments PATH for those.
+  3. **Merge** into `.mcp.json` under `mcpServers`: add/update, never delete or
+     modify unrecognized entries.
+  4. **Redact secrets**: replace secret `env` VALUES (keys like `*_API_KEY`,
+     `*_TOKEN`, `*_SECRET`, `AUTH*`) with `${VAR_NAME}` references; if unsure,
+     treat as secret. Non-secret env (paths, flags, IDs) stays.
+  5. **Validate and report**: re-read `.mcp.json`, confirm valid JSON +
+     perspecta-workflow present with an absolute node command; report
+     added/updated/untouched + any redactions.
 
-  The resulting `.mcp.json` entry the agent should produce is shaped like
-  `{ "command": "node", "args": ["<ABS-PATH>/mcp-server.mjs"] }`, but the prompt
+  The resulting perspecta-workflow entry is shaped like
+  `{ "command": "/abs/node", "args": ["<ABS-PATH>/mcp-server.mjs"] }`; the prompt
   states intent in prose and lets the agent own the exact edit.
 
 ### 3. Install-tab UI (plugin settings)
@@ -120,14 +137,17 @@ A small, pure-where-possible helper that produces the prompt text.
 A new `Setting` row in the Install tab (`packages/obsidian-plugin/src/settings.ts`,
 `install` tab `render`), placed below the existing skills-install action:
 
-- **Name:** "Connect a coding agent (MCP)"
+- **Name:** "Import the agent's MCP servers"
 - **Desc:** explains that the prompt, pasted into a coding agent running in this
-  vault, registers the bundled perspecta-workflow MCP server so the agent can run
-  workflows.
-- **Button:** "Copy setup prompt".
+  vault, records every MCP server the agent has into the vault's `.mcp.json`
+  (including the bundled perspecta-workflow server) so the MCP tab can manage
+  them all.
+- **Button:** "Copy import prompt".
 - **On click:** resolve the absolute path, copy the generated prompt to the
-  clipboard, show a `Notice`: *"Setup prompt copied — paste it into your coding
-  agent running in this vault."*
+  clipboard, show a `Notice`: *"Import prompt copied — paste it into your coding
+  agent running in this vault."* `navigator.clipboard.writeText` is wrapped in
+  try/catch with a fallback Notice; a disabled button (missing artifact) shows
+  the reason as a tooltip.
 
 ## Guards & edge cases
 

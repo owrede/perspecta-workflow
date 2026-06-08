@@ -42,8 +42,10 @@ export class NodeMcpProbe implements McpProbe {
       throw new Error(`Stdio server "${server.name}" has no command — check .mcp.json`);
     }
     const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-    const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-    const transport = new StdioClientTransport({ command: server.command, args: server.args ?? [], env: server.env });
+    const stdioMod = await import("@modelcontextprotocol/sdk/client/stdio.js");
+    const { StdioClientTransport, getDefaultEnvironment } = stdioMod;
+    const env = server.env ? { ...getDefaultEnvironment(), ...server.env } : undefined;
+    const transport = new StdioClientTransport({ command: server.command, args: server.args ?? [], env });
     const client = new Client({ name: "perspecta-workflow-probe", version: "1.0.0" });
     try {
       await client.connect(transport);

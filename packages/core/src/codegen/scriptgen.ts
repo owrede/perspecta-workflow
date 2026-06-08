@@ -465,7 +465,9 @@ export function buildWorkflowArtifacts(doc: PflowDocument, registry: McpRegistry
   for (const node of doc.nodes) {
     if (node.kind !== "mcp") continue;
     const server = (node.config?.mcpServer as string | undefined) ?? "";
-    if (!server) continue; // mcp-server-missing is a blocking lint handled upstream
+    if (!server) {
+      throw new Error(`MCP node "${node.id}" has no service selected — pick a server in the inspector before exporting (it would otherwise emit a dangling agentType).`);
+    }
     const name = mcpAgentTypeName(doc, node);
     const serverReg: McpRegistryServer = registry[server] ?? { whitelisted: false, probe: { status: "cold" }, tools: {} };
     const content = mcpSubagentMarkdown(name, server, serverReg, node.label || node.id);

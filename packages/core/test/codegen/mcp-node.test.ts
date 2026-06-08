@@ -195,4 +195,22 @@ describe("buildWorkflowArtifacts", () => {
     }));
     expect(buildWorkflowArtifacts(plain, {}).subagents).toEqual([]);
   });
+  it("throws on an mcp node with no server (would emit a dangling agentType)", () => {
+    const bad = parsePflow(JSON.stringify({
+      pflowFormatVersion: 1, workflow: { name: "wf", description: "d" },
+      nodes: [
+        { id: "in", kind: "input", label: "In", inputs: [], outputs: [{ id: "u", name: "u", schema: { type: "string" } }] },
+        { id: "fig", kind: "mcp", label: "Fetch", prompt: "use {{in:u}} {{out:o}}",
+          inputs: [{ id: "in:u", name: "u", schema: { type: "string" }, required: true }],
+          outputs: [{ id: "out:o", name: "o", schema: { type: "string" } }],
+          config: {} },  // NO mcpServer
+        { id: "end", kind: "output", label: "Out", inputs: [{ id: "in", name: "o", schema: { type: "string" }, required: true }], outputs: [] },
+      ],
+      wires: [
+        { from: { nodeId: "in", portId: "u" }, to: { nodeId: "fig", portId: "in:u" } },
+        { from: { nodeId: "fig", portId: "out:o" }, to: { nodeId: "end", portId: "in" } },
+      ],
+    }));
+    expect(() => buildWorkflowArtifacts(bad, {})).toThrow(/no MCP server|mcpServer|no service/i);
+  });
 });

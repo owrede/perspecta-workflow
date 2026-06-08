@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MarkerType } from "@xyflow/system";
-import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit, applyDropConnect } from "../src/views/pflow-editor/flow-map.js";
+import { toFlowNodes, toFlowEdges, applyNodePosition, applyPromptEdit, applyDropConnect, applyEvalMode, applyEvalModeFlagOnly, applyBlockOnFail } from "../src/views/pflow-editor/flow-map.js";
+import { templateForMode } from "../src/views/pflow-editor/eval-templates.js";
 import type { PflowDocument } from "@perspecta/core";
 
 const DOC: PflowDocument = {
@@ -651,5 +652,41 @@ describe("applyDropConnect (drag a connector onto a card)", () => {
     const before = JSON.stringify(D);
     applyDropConnect(D, "ag", "out:notes", "source", "end");
     expect(JSON.stringify(D)).toBe(before);
+  });
+});
+
+describe("flow-map — eval transforms", () => {
+  const baseDoc = {
+    pflowFormatVersion: 1 as const,
+    workflow: { name: "wf", description: "" },
+    nodes: [
+      { id: "ev", kind: "eval" as const, label: "Gate", prompt: "",
+        inputs: [], outputs: [], config: { mode: "criteria" } },
+    ],
+    wires: [],
+  };
+
+  it("applyEvalMode sets the template, mode, and derives candidate+pass+fail ports", () => {
+    const next = applyEvalMode(baseDoc, "ev", "comparison");
+    const node = next.nodes.find((n) => n.id === "ev")!;
+    expect(node.prompt).toBe(templateForMode("comparison"));
+    expect(node.config?.mode).toBe("comparison");
+    expect(node.inputs.map((p) => p.name).sort()).toEqual(["candidate", "reference"]);
+    expect(node.outputs.map((p) => p.name).sort()).toEqual(["fail", "pass"]);
+  });
+
+  it("applyEvalModeFlagOnly records mode without touching the prompt", () => {
+    const edited = { ...baseDoc, nodes: [{ ...baseDoc.nodes[0], prompt: "my hand-written eval" }] };
+    const next = applyEvalModeFlagOnly(edited, "ev", "threshold");
+    const node = next.nodes.find((n) => n.id === "ev")!;
+    expect(node.prompt).toBe("my hand-written eval");
+    expect(node.config?.mode).toBe("threshold");
+  });
+
+  it("applyBlockOnFail flips only the blockOnFail flag", () => {
+    const next = applyBlockOnFail(baseDoc, "ev", true);
+    const node = next.nodes.find((n) => n.id === "ev")!;
+    expect(node.config?.blockOnFail).toBe(true);
+    expect(node.config?.mode).toBe("criteria");
   });
 });

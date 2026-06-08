@@ -2,6 +2,7 @@ import { MarkerType } from "@xyflow/system";
 import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants, snapshotGrants } from "@perspecta/core";
 import type { TokenPort, TokenType, McpRegistry } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
+import { templateForMode, type EvalMode } from "./eval-templates.js";
 
 /** A port as rendered on the canvas: the persisted Port plus `wired` — whether
  *  any wire touches this port. The node fills a port's dot when it is wired
@@ -641,6 +642,42 @@ export function applyMcpServer(doc: PflowDocument, nodeId: string, server: strin
       const { mcpServer: _omit, ...rest } = n.config ?? {};
       return { ...n, config: server ? { ...rest, mcpServer: server } : rest };
     }),
+  };
+}
+
+/** Switch an eval node's mode: replace its prompt with the mode's template and
+ *  re-derive ports from the template's tokens (same mechanism as a prompt edit).
+ *  Also records `config.mode`. The caller confirms an overwrite of a non-empty
+ *  prompt before calling this. */
+export function applyEvalMode(doc: PflowDocument, nodeId: string, mode: EvalMode): PflowDocument {
+  const withPromptAndPorts = applyPromptAndDerivePorts(doc, nodeId, templateForMode(mode));
+  return {
+    ...withPromptAndPorts,
+    nodes: withPromptAndPorts.nodes.map((n) =>
+      n.id === nodeId ? { ...n, config: { ...n.config, mode } } : n,
+    ),
+  };
+}
+
+/** Record an eval node's mode WITHOUT changing its prompt (used when the user
+ *  declines the template-overwrite confirm). The resulting prompt/mode mismatch
+ *  is flagged later by the deferred check-workflow lint. */
+export function applyEvalModeFlagOnly(doc: PflowDocument, nodeId: string, mode: EvalMode): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) =>
+      n.id === nodeId ? { ...n, config: { ...n.config, mode } } : n,
+    ),
+  };
+}
+
+/** Toggle an eval node's hard quality gate (throw on a `fail` verdict). */
+export function applyBlockOnFail(doc: PflowDocument, nodeId: string, value: boolean): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) =>
+      n.id === nodeId ? { ...n, config: { ...n.config, blockOnFail: value } } : n,
+    ),
   };
 }
 

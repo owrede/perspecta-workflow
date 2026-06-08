@@ -1,4 +1,6 @@
 import type { PortSchema } from "./schema.js";
+import type { McpRegistry } from "./mcp-registry.js";
+import { isPolicyStricter } from "./mcp-registry.js";
 
 /** Shallow M1 port-compatibility. `any` joins anything; scalars must match
  *  exactly; arrays must agree on item type (missing items === any); objects
@@ -109,6 +111,37 @@ export function validatePflow(doc: PflowDocument): PflowValidation {
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+/** MCP-node lints, computed against the vault registry (which validatePflow does
+ *  not have). Only `mcp-server-missing` is blocking for export (no service ⇒
+ *  nothing to compile); the rest are informational. Pure. */
+export function mcpLints(doc: PflowDocument, registry: McpRegistry): PflowError[] {
+  const errors: PflowError[] = [];
+  for (const node of doc.nodes) {
+    if (node.kind !== "mcp") continue;
+    const server = (node.config?.mcpServer as string | undefined) ?? "";
+    if (!server) {
+      errors.push({ rule: "mcp-server-missing", message: `MCP node ${node.id} has no service selected`, nodeId: node.id });
+      continue;
+    }
+    const reg = registry[server];
+    if (!reg || !reg.whitelisted) {
+      errors.push({ rule: "mcp-server-not-whitelisted", message: `MCP node ${node.id}: service "${server}" is not whitelisted in this vault`, nodeId: node.id });
+      continue;
+    }
+    if (reg.probe.status !== "hot") {
+      errors.push({ rule: "mcp-server-cold", message: `MCP node ${node.id}: service "${server}" is whitelisted but not probed`, nodeId: node.id });
+    }
+    const expected = node.config?.expectedGrants as Record<string, "blocked" | "ask" | "allow"> | undefined;
+    if (expected && reg.probe.status === "hot") {
+      const stricter = isPolicyStricter(expected, reg);
+      if (stricter.length) {
+        errors.push({ rule: "mcp-policy-stricter", message: `MCP node ${node.id}: this vault is stricter than expected for ${server}.${stricter.join(", ")}`, nodeId: node.id });
+      }
+    }
+  }
+  return errors;
 }
 
 /** True if a join node is reachable downstream of startId via data wires. */

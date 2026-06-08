@@ -84,7 +84,7 @@ const serverCtx = await esbuild.context({
   platform: "node",
   target: "node18",
   outfile: "mcp-server.mjs",
-  sourcemap: false,
+  sourcemap: watch ? "inline" : false,
   logLevel: "info",
   banner: {
     js: `import { createRequire } from "module"; const require = createRequire(import.meta.url);`,

@@ -12,7 +12,7 @@ import {
   emitBranchRegion,
 } from "./emit-kinds.js";
 import type { McpRegistryServer, McpRegistry } from "../pflow/mcp-registry.js";
-import { resolveServerGrants } from "../pflow/mcp-registry.js";
+import { resolveServerGrants, DEFAULT_GROUP_DEFAULTS } from "../pflow/mcp-registry.js";
 
 /** JSON.stringify yields a spec-compliant double-quoted JS string literal with
  *  correct escaping of quotes, backslashes, and control chars. */
@@ -470,7 +470,7 @@ export function buildWorkflowArtifacts(doc: PflowDocument, registry: McpRegistry
       throw new Error(`MCP node "${node.id}" has no service selected — pick a server in the inspector before exporting (it would otherwise emit a dangling agentType).`);
     }
     const name = mcpAgentTypeName(doc, node);
-    const serverReg: McpRegistryServer = registry[server] ?? { whitelisted: false, probe: { status: "cold" }, tools: {} };
+    const serverReg: McpRegistryServer = registry[server] ?? { whitelisted: false, groupDefaults: DEFAULT_GROUP_DEFAULTS, probe: { status: "cold" }, tools: {} };
     const content = mcpSubagentMarkdown(name, server, serverReg, node.label || node.id);
     subagents.push({ path: `.claude/agents/${name}.md`, content });
   }

@@ -22,7 +22,9 @@ export interface McpProbe {
 }
 
 /** Convert probed tools into registry tool entries: classify group (annotation
- *  source when a hint decided it, else heuristic), default permission = ask. Pure. */
+ *  source when a hint decided it, else heuristic); each tool starts on "default"
+ *  so it follows its group's default (initially "ask") rather than pinning a
+ *  concrete value — keeps groups uniform until the user deviates a tool. Pure. */
 export function probedToolsToRegistry(tools: ProbedTool[]): Record<string, McpRegistryTool> {
   const out: Record<string, McpRegistryTool> = {};
   for (const t of tools) {
@@ -32,7 +34,7 @@ export function probedToolsToRegistry(tools: ProbedTool[]): Record<string, McpRe
       description: t.description,
       group,
       groupSource: decidedByAnnotation ? "annotation" : "heuristic",
-      permission: "ask",
+      permission: "default",
     };
   }
   return out;

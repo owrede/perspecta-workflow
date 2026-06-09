@@ -2,13 +2,15 @@ import { describe, it, expect } from "vitest";
 import { probedToolsToRegistry, NodeMcpProbe } from "../src/mcp/probe.js";
 
 describe("probedToolsToRegistry", () => {
-  it("maps probed tools into registry tools with classified groups + ask default", () => {
+  it("maps probed tools into classified groups; each tool starts on the 'default' sentinel", () => {
     const reg = probedToolsToRegistry([
       { name: "get_design", description: "Fetch", annotations: { readOnlyHint: true } },
       { name: "create_file", description: "Make" },
     ]);
-    expect(reg.get_design).toMatchObject({ group: "read", groupSource: "annotation", permission: "ask" });
-    expect(reg.create_file).toMatchObject({ group: "write", groupSource: "heuristic", permission: "ask" });
+    // Tools follow their group default (initially "ask") via the "default" sentinel,
+    // not a pinned concrete value — so groups stay uniform until the user deviates one.
+    expect(reg.get_design).toMatchObject({ group: "read", groupSource: "annotation", permission: "default" });
+    expect(reg.create_file).toMatchObject({ group: "write", groupSource: "heuristic", permission: "default" });
   });
   it("uses heuristic groupSource when no annotation decided the group", () => {
     const reg = probedToolsToRegistry([{ name: "list_things" }]);

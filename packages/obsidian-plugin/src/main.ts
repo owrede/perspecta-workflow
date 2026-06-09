@@ -116,8 +116,8 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   }
 
   /** Probe one server (cold→hot): launch it, list its tools, cache them in the
-   *  registry with default "ask" permission. Sets status probing→hot, or
-   *  failed+error. Persists settings. */
+   *  registry — each tool on "default" (follows its group default). Sets status
+   *  probing→hot, or failed+error. Persists settings. */
   async probeMcpServer(name: string): Promise<void> {
     const server = (await this.listMcpServers()).find((s) => s.name === name);
     if (!server) return;

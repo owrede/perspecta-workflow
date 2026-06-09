@@ -13,6 +13,7 @@ import {
 } from "./emit-kinds.js";
 import type { McpRegistryServer, McpRegistry } from "../pflow/mcp-registry.js";
 import { resolveServerGrants, DEFAULT_GROUP_DEFAULTS } from "../pflow/mcp-registry.js";
+import { nodeContractMode, vmToolName } from "../pflow/contract.js";
 
 /** JSON.stringify yields a spec-compliant double-quoted JS string literal with
  *  correct escaping of quotes, backslashes, and control chars. */
@@ -88,7 +89,28 @@ export function sourceExpr(doc: PflowDocument, wire: { from: { nodeId: string; p
     const name = wire.from.portId.slice("out:".length);
     if (outToks.some((t) => t.name === name)) return `${varName(doc, src)}__${name}`;
   }
+  // Contract-mode mcp node: an output port carrying a projection path reads the
+  // projected slice of the parsed result bundle (optional-chained, so a partial
+  // bundle yields undefined rather than a TypeError). A port without a
+  // projection (hand-authored doc) reads the whole bundle var.
+  if (src.kind === "mcp" && nodeContractMode(src) !== undefined) {
+    const port = src.outputs.find((p) => p.id === wire.from.portId);
+    if (port?.projection) return projectionExpr(varName(doc, src), port.projection);
+  }
   return varName(doc, src);
+}
+
+/** `base?.seg1?.seg2` for a dotted projection path; bracket notation for path
+ *  segments that are not plain JS identifiers. Empty path → the base itself. */
+export function projectionExpr(base: string, projection: string): string {
+  if (!projection) return base;
+  return (
+    base +
+    projection
+      .split(".")
+      .map((seg) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(seg) ? `?.${seg}` : `?.[${jsString(seg)}]`))
+      .join("")
+  );
 }
 
 /** The output tokens of an agent that uses the multi-output protocol (2+), or an
@@ -296,6 +318,67 @@ export function buildAgentCall(
   return `await agent(${tmpl}, ${opts})`;
 }
 
+/** Emit the contract-mode body of a vault-memory mcp node: a single-purpose
+ *  connector agent told to call `vm_<contract>` with EXACTLY the pre-bound
+ *  args, plus a defensive fence-stripping JSON.parse so downstream projection
+ *  reads (`<var>?.write_back?.doc_id`) work on the parsed bundle.
+ *
+ *  Args object construction (deterministic):
+ *  - names = union of the node's input-port names and `config.contractInputs`
+ *    keys, sorted lexicographically (the stable-JSON invariant);
+ *  - a WIRED port interpolates its upstream binding expression through a
+ *    runtime `JSON.stringify(...)` so the prompt's json block stays valid JSON
+ *    whatever the value is (reconvergence overrides take precedence, exactly
+ *    like the prompt-driven path);
+ *  - an unwired name pinned in `config.contractInputs` embeds the literal,
+ *    JSON-encoded at codegen time;
+ *  - a name that is neither wired nor pinned is omitted (the blocking
+ *    memory-input-unbound lint reports it before export). */
+function emitContractCall(
+  doc: PflowDocument,
+  node: PflowNode,
+  contract: string,
+  agentType: string,
+  overrides?: Map<string, string>,
+): string {
+  const v = varName(doc, node);
+  const pins = (node.config?.contractInputs ?? {}) as Record<string, unknown>;
+  const incoming = inWires(doc, node.id);
+  const names = Array.from(new Set([...node.inputs.map((p) => p.name), ...Object.keys(pins)])).sort();
+
+  const argLines: string[] = [];
+  for (const name of names) {
+    const port = node.inputs.find((p) => p.name === name);
+    let valueText: string | undefined;
+    if (port) {
+      const override = overrides?.get(port.id);
+      const wire = incoming.find((w) => w.to.portId === port.id);
+      const expr = override ?? (wire ? sourceExpr(doc, wire) : undefined);
+      if (expr !== undefined) valueText = "${JSON.stringify(" + expr + ")}";
+    }
+    if (valueText === undefined && name in pins) {
+      valueText = escapeTemplate(JSON.stringify(pins[name]));
+    }
+    if (valueText === undefined) continue;
+    argLines.push(`  ${escapeTemplate(JSON.stringify(name))}: ${valueText}`);
+  }
+  const argsJson = argLines.length > 0 ? `{\n${argLines.join(",\n")}\n}` : "{}";
+
+  // \` = a literal backtick inside the EMITTED template literal.
+  const bt = "\\`";
+  const fence = bt + bt + bt;
+  const prompt =
+    `Call the MCP tool ${bt}${vmToolName(contract)}${bt} with EXACTLY these arguments and ` +
+    `return its JSON result verbatim, with no commentary and no code fences. ` +
+    `If the tool is not available in your session, call ${bt}register_contracts_as_tools${bt} once, then retry.\n` +
+    `${fence}json\n${argsJson}\n${fence}`;
+
+  return [
+    `  const ${v}__text = await agent(\`${prompt}\`, { label: ${jsString(node.label)}, agentType: ${jsString(agentType)} });`,
+    `  const ${v} = JSON.parse(String(${v}__text).replace(/^\\s*\`\`\`(?:json)?\\s*/, "").replace(/\\s*\`\`\`\\s*$/, "").trim());`,
+  ].join("\n");
+}
+
 /** The unified result variable for a branch: every arm assigns it, and
  *  reconvergent downstream consumers read it. Distinct from the branch's own
  *  choice variable (varName), which holds the BRANCH: <label> verdict. */
@@ -336,6 +419,8 @@ function emitNode(doc: PflowDocument, node: PflowNode, overrides?: Map<string, s
     case "mcp": {
       const v = varName(doc, node);
       const at = mcpAgentTypeName(doc, node);
+      const contract = nodeContractMode(node);
+      if (contract !== undefined) return emitContractCall(doc, node, contract, at, overrides);
       return `  const ${v} = ${buildAgentCall(doc, node, undefined, overrides, at)};`;
     }
     case "output": {

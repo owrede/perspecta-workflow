@@ -1,4 +1,4 @@
-import type { PortSchema } from "./schema.js";
+import type { PortSchema, PflowNode } from "./schema.js";
 
 /**
  * vault-memory contract snapshot — the typed bridge between a contract's
@@ -139,6 +139,26 @@ export interface RawContractDescription {
   json_schema: unknown;
   output_shape?: unknown;
   writes_to?: string[];
+}
+
+/** The server name whose mcp nodes can enter contract mode. */
+export const VAULT_MEMORY_SERVER = "vault-memory";
+
+/** The selected contract of an mcp node in contract mode, or undefined when the
+ *  node is any other kind, bound to another server, or has no contract picked.
+ *  This is THE contract-mode detection used by codegen, lints, and the editor. */
+export function nodeContractMode(node: PflowNode): string | undefined {
+  if (node.kind !== "mcp") return undefined;
+  if (node.config?.mcpServer !== VAULT_MEMORY_SERVER) return undefined;
+  const c = node.config?.contract;
+  return typeof c === "string" && c.length > 0 ? c : undefined;
+}
+
+/** The dynamic MCP tool name vault-memory registers for a contract: `vm_` +
+ *  the slugified contract name (dashes → underscores; anything outside the
+ *  tool-name charset hardened to underscores). Mirrors vault-memory's slugify. */
+export function vmToolName(contract: string): string {
+  return `vm_${contract.replace(/-/g, "_").replace(/[^A-Za-z0-9_]/g, "_")}`;
 }
 
 /** Build the full snapshot from a describe_contract result. Pure. */

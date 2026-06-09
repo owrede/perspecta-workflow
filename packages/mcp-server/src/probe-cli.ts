@@ -5,8 +5,17 @@
  * SDK's stdio client needs Node APIs anyway).
  *
  * Contract:
- *   stdin:  a JSON object { command: string, args?: string[], env?: Record<string,string> }
- *   stdout: on success, one line of JSON: { ok: true, tools: ProbedTool[] }
+ *   stdin:  a JSON object {
+ *             command: string, args?: string[], env?: Record<string,string>,
+ *             preCalls?: { tool, arguments? }[],   // best-effort calls BEFORE listing
+ *                                                  // (e.g. vault-memory's
+ *                                                  // register_contracts_as_tools so the
+ *                                                  // dynamic vm_* tools appear in the list)
+ *             call?: { tool, arguments? },         // call ONE tool, return its result
+ *           }
+ *   stdout: on success, one line of JSON: { ok: true, tools: ProbedTool[], result?: unknown }
+ *           (`result` only when `call` was requested: the tool's first text
+ *           content block, JSON.parsed when parseable, else the raw text)
  *           on failure, one line of JSON: { ok: false, error: string }
  *   exit:   0 on success, 1 on failure (stdout still carries the JSON either way)
  *
@@ -16,10 +25,17 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+interface HelperToolCall {
+  tool: string;
+  arguments?: Record<string, unknown>;
+}
+
 interface ProbeRequest {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  preCalls?: HelperToolCall[];
+  call?: HelperToolCall;
 }
 
 interface ProbedTool {
@@ -59,13 +75,33 @@ async function main(): Promise<void> {
   const client = new Client({ name: "perspecta-workflow-probe", version: "1.0.0" });
   try {
     await client.connect(transport);
+    // Best-effort warm-up calls (e.g. registering dynamic tools) — a failing
+    // preCall must not break the probe; servers without the tool just skip it.
+    for (const pc of req!.preCalls ?? []) {
+      try {
+        await client.callTool({ name: pc.tool, arguments: pc.arguments ?? {} });
+      } catch {
+        /* best-effort */
+      }
+    }
     const res = await client.listTools();
     const tools: ProbedTool[] = res.tools.map((t) => ({
       name: t.name,
       description: t.description,
       annotations: t.annotations,
     }));
-    process.stdout.write(JSON.stringify({ ok: true, tools }) + "\n");
+    let result: unknown;
+    if (req!.call) {
+      const r = await client.callTool({ name: req!.call.tool, arguments: req!.call.arguments ?? {} });
+      const content = (r as { content?: { type?: string; text?: string }[] }).content;
+      const text = Array.isArray(content) && content[0]?.type === "text" ? content[0].text : undefined;
+      if (typeof text === "string") {
+        try { result = JSON.parse(text); } catch { result = text; }
+      } else {
+        result = content;
+      }
+    }
+    process.stdout.write(JSON.stringify(req!.call ? { ok: true, tools, result } : { ok: true, tools }) + "\n");
     await client.close().catch(() => {});
     process.exit(0);
   } catch (e) {

@@ -1,0 +1,50 @@
+{
+  "ok": true,
+  "name": "code-review-brief",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "pr_doc_id": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*://",
+        "description": "DocId of the PR-style doc to review."
+      },
+      "search_query": {
+        "type": "string",
+        "description": "Hybrid-search query that surfaces related context."
+      }
+    },
+    "required": [
+      "pr_doc_id",
+      "search_query"
+    ],
+    "additionalProperties": false
+  },
+  "summary": "# code-review-brief\n\nCompile a code-review brief from a PR-style doc + related context found\nvia hybrid search. Useful for asynchronous review where the reviewer\nneeds both the change description and the prior-art surface.\n\n\n## Inputs\n- **pr_doc_id** (`#/types/DocId`, required): DocId of the PR-style doc to review.\n- **search_query** (string, required): Hybrid-search query that surfaces related context.\n\n## Sources\n- **default_source** → `obsidian-fs://test-vault` (required)\n\n## Sinks\n- **default_sink** → `_memory/_briefs` (required MemorySink)\n\n## Assembly\n1. **pr1** — Read a note's content _(`read_note(doc_id)`)_\n2. **related** — Search the vault (semantic + keyword) _(`search_hybrid(query, top_k, __ref_pr1)`)_\n3. **compiled** — Compile the gathered notes into a brief _(`compile_brief(vault, target, purpose, max_tokens, __ref_related, __ref_step1)`)_\n4. **step1** — Recall earlier agent observations from memory _(`recall(handle, since_days)`)_\n\n## write_back\nWrites a brief document to `{{default_sink}}` with body from `{{compiled.body}}`.\n\n## Output Shape\n`{steps: object, write_back: object}`\n",
+  "output_shape": {
+    "type": "object",
+    "properties": {
+      "steps": {
+        "type": "object"
+      },
+      "write_back": {
+        "type": "object",
+        "properties": {
+          "doc_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_id"
+        ]
+      }
+    },
+    "required": [
+      "write_back"
+    ]
+  },
+  "writes_to": [
+    "_memory/_briefs",
+    "{{default_sink}}"
+  ]
+}

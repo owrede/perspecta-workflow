@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
-import { classifyToolGroup, type McpRegistryTool, type McpToolAnnotations } from "@perspecta/core";
+import { classifyToolGroup, VAULT_MEMORY_SERVER, type McpRegistryTool, type McpToolAnnotations } from "@perspecta/core";
 import type { McpJsonServer } from "./mcpJson.js";
 import { resolveNodePath, augmentedPath, NO_NODE_REASON } from "./nodeResolver.js";
 
@@ -40,11 +40,107 @@ export function probedToolsToRegistry(tools: ProbedTool[]): Record<string, McpRe
   return out;
 }
 
+/** vault-memory's dynamic contract tools, as listed by the probe (the names are
+ *  slugified: contract "meeting-prep" → tool "vm_meeting_prep"). Strips the
+ *  prefix; sorted unique. The slugs are valid describe_contract lookups —
+ *  vault-memory resolves them back to the canonical contract name. Pure. */
+export function contractsFromProbe(tools: ProbedTool[]): string[] {
+  const names = tools
+    .filter((t) => t.name.startsWith("vm_"))
+    .map((t) => t.name.slice("vm_".length))
+    .filter((n) => n.length > 0);
+  return Array.from(new Set(names)).sort();
+}
+
+/** One tool call forwarded to the helper (preCalls / call protocol fields). */
+export interface HelperToolCall {
+  tool: string;
+  arguments?: Record<string, unknown>;
+}
+
+/** The request the bundled probe CLI (mcp-probe.mjs) reads from stdin. */
+interface ProbeCliRequest {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  preCalls?: HelperToolCall[];
+  call?: HelperToolCall;
+}
+
 /** Shape the bundled probe CLI (mcp-probe.mjs) prints to stdout. */
 interface ProbeCliResult {
   ok: boolean;
   tools?: ProbedTool[];
+  result?: unknown;
   error?: string;
+}
+
+export type HelperSpawnFn = (
+  cmd: string,
+  args: string[],
+  opts: { env: NodeJS.ProcessEnv },
+) => ChildProcessWithoutNullStreams;
+
+/** Spawn the bundled helper for ONE MCP conversation (list + optional calls)
+ *  and parse its single JSON output line. Shared by NodeMcpProbe and
+ *  NodeContractDescriber — the renderer-safe child-process plumbing lives in
+ *  exactly one place (see the header comment: no dynamic import() works here). */
+export async function runMcpHelper(
+  helperPath: string,
+  spawnFn: HelperSpawnFn,
+  resolveNode: () => string | null,
+  buildPath: () => string,
+  server: McpJsonServer,
+  extra?: { preCalls?: HelperToolCall[]; call?: HelperToolCall },
+): Promise<ProbeCliResult> {
+  if (server.transport !== "stdio") {
+    throw new Error(`Only stdio MCP servers can be probed in this version (got "${server.transport}")`);
+  }
+  if (!server.command) {
+    throw new Error(`Stdio server "${server.name}" has no command — check .mcp.json`);
+  }
+  // Obsidian launched from the Dock has a minimal PATH (no nvm/Homebrew), so we
+  // (1) resolve an absolute node to launch the helper, and (2) hand the helper
+  // an augmented PATH so the MCP SDK inside it can spawn the TARGET server's
+  // command (npx/uvx/vault-memory/…), which would otherwise ENOENT.
+  const nodePath = resolveNode();
+  if (!nodePath) throw new Error(NO_NODE_REASON);
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, PATH: buildPath() };
+  const child = spawnFn(nodePath, [helperPath], { env: childEnv });
+  const request: ProbeCliRequest = {
+    command: server.command,
+    args: server.args ?? [],
+    env: server.env,
+    ...(extra?.preCalls ? { preCalls: extra.preCalls } : {}),
+    ...(extra?.call ? { call: extra.call } : {}),
+  };
+
+  const result = await new Promise<ProbeCliResult>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    child.on("error", (e: Error) => reject(new Error(`probe helper failed to spawn: ${e.message}`)));
+    child.on("close", () => {
+      const line = stdout.trim().split("\n").filter(Boolean).pop();
+      if (!line) {
+        reject(new Error(`probe helper produced no output${stderr ? ` (stderr: ${stderr.trim().slice(0, 200)})` : ""}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(line) as ProbeCliResult);
+      } catch {
+        reject(new Error(`probe helper returned non-JSON: ${line.slice(0, 200)}`));
+      }
+    });
+    child.stdin.write(JSON.stringify(request));
+    child.stdin.end();
+  });
+
+  if (!result.ok) {
+    throw new Error(result.error ?? "probe failed");
+  }
+  return result;
 }
 
 /** Node-side stdio probe. Spawns the bundled `mcp-probe.mjs` helper as a child
@@ -72,47 +168,24 @@ export class NodeMcpProbe implements McpProbe {
   ) {}
 
   async probe(server: McpJsonServer): Promise<ProbedTool[]> {
-    if (server.transport !== "stdio") {
-      throw new Error(`Only stdio MCP servers can be probed in this version (got "${server.transport}")`);
-    }
-    if (!server.command) {
-      throw new Error(`Stdio server "${server.name}" has no command — check .mcp.json`);
-    }
-    // Obsidian launched from the Dock has a minimal PATH (no nvm/Homebrew), so we
-    // (1) resolve an absolute node to launch the helper, and (2) hand the helper
-    // an augmented PATH so the MCP SDK inside it can spawn the TARGET server's
-    // command (npx/uvx/vault-memory/…), which would otherwise ENOENT.
-    const nodePath = this.resolveNode();
-    if (!nodePath) throw new Error(NO_NODE_REASON);
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, PATH: this.buildPath() };
-    const child = this.spawnFn(nodePath, [this.probeHelperPath], { env: childEnv });
-    const request = JSON.stringify({ command: server.command, args: server.args ?? [], env: server.env });
-
-    const result = await new Promise<ProbeCliResult>((resolve, reject) => {
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-      child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-      child.on("error", (e: Error) => reject(new Error(`probe helper failed to spawn: ${e.message}`)));
-      child.on("close", () => {
-        const line = stdout.trim().split("\n").filter(Boolean).pop();
-        if (!line) {
-          reject(new Error(`probe helper produced no output${stderr ? ` (stderr: ${stderr.trim().slice(0, 200)})` : ""}`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(line) as ProbeCliResult);
-        } catch {
-          reject(new Error(`probe helper returned non-JSON: ${line.slice(0, 200)}`));
-        }
-      });
-      child.stdin.write(request);
-      child.stdin.end();
-    });
-
-    if (!result.ok) {
-      throw new Error(result.error ?? "probe failed");
-    }
+    // vault-memory only registers its dynamic vm_<contract> tools after an
+    // explicit register_contracts_as_tools call (the per-vault auto_register
+    // config gate defaults OFF) — so the probe warms it up first, scoped to the
+    // active vault when the .mcp.json entry names one. Best-effort: servers
+    // without the tool (or older vault-memory versions) just skip it.
+    const preCalls: HelperToolCall[] | undefined =
+      server.name === VAULT_MEMORY_SERVER
+        ? [{
+            tool: "register_contracts_as_tools",
+            arguments: server.env?.VAULT_MEMORY_ACTIVE_VAULT
+              ? { vault: server.env.VAULT_MEMORY_ACTIVE_VAULT }
+              : {},
+          }]
+        : undefined;
+    const result = await runMcpHelper(
+      this.probeHelperPath, this.spawnFn, this.resolveNode, this.buildPath,
+      server, preCalls ? { preCalls } : undefined,
+    );
     // v1 limitation: the helper's listTools() returns only the first page; a
     // server that paginates its tools (nextCursor) would have later pages
     // unregistered.

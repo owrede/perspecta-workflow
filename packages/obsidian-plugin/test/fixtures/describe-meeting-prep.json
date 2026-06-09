@@ -1,0 +1,65 @@
+{
+  "ok": true,
+  "name": "meeting-prep",
+  "json_schema": {
+    "type": "object",
+    "properties": {
+      "vault": {
+        "type": "string",
+        "description": "Name des Vaults, in dem der Brief kompiliert wird (z.B. \"inim-vm-test\")."
+      },
+      "meeting_path": {
+        "type": "string",
+        "description": "Vault-relativer Pfad der Meeting-Notiz (z.B. \"Kommunikation/Syncs/2026-05-25 Meeting Sarah Maihaus.md\").\n"
+      },
+      "context_doc_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Voll-qualifizierte DocIds des relevanten Kontexts (Meeting-Notiz + verlinkte Personen/Orgs). Bilden die Quell-Korpus für den Brief.\n"
+      }
+    },
+    "required": [
+      "vault",
+      "meeting_path",
+      "context_doc_ids"
+    ],
+    "additionalProperties": false
+  },
+  "summary": "# meeting-prep\n\nKompiliert einen Meeting-Vorbereitungs-Brief aus einer Meeting-Notiz plus\nexplizit benannten Kontext-Notizen (Personen, Organisationen, Projekte). Der\nBrief bündelt Andockpunkte, offene Punkte und Caveats zu den Gesprächspartnern\nund wird mit Provenance in den Briefs-Sink geschrieben.\n\n\n## Inputs\n- **vault** (string, required): Name des Vaults, in dem der Brief kompiliert wird (z.B. \"inim-vm-test\").\n- **meeting_path** (string, required): Vault-relativer Pfad der Meeting-Notiz (z.B. \"Kommunikation/Syncs/2026-05-25 Meeting Sarah Maihaus.md\").\n\n- **context_doc_ids** (array, required): Voll-qualifizierte DocIds des relevanten Kontexts (Meeting-Notiz + verlinkte Personen/Orgs). Bilden die Quell-Korpus für den Brief.\n\n\n## Sources\n- **default_source** → `obsidian-fs://inim-vm-test` (required)\n\n## Sinks\n- **default_sink** → `default` (required MemorySink)\n\n## Assembly\n1. **meeting** — Read a note's content _(`read_note(vault, path)`)_\n2. **compiled** — Compile the gathered notes into a brief _(`compile_brief(vault, target, source_doc_ids, sink, purpose, max_tokens)`)_\n\n## Output Shape\n`{steps: object}`\n",
+  "output_shape": {
+    "type": "object",
+    "properties": {
+      "steps": {
+        "type": "object",
+        "properties": {
+          "compiled": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              },
+              "doc_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "doc_id"
+            ]
+          }
+        },
+        "required": [
+          "compiled"
+        ]
+      }
+    },
+    "required": [
+      "steps"
+    ]
+  },
+  "writes_to": [
+    "default"
+  ]
+}

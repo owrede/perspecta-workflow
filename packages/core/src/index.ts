@@ -16,5 +16,6 @@ export * from "./pflow/validate.js";
 export * from "./pflow/topo.js";
 export * from "./pflow/tokens.js";
 export * from "./pflow/mcp-registry.js";
+export * from "./pflow/contract.js";
 export * from "./codegen/emit-lint.js";
 export * from "./codegen/scriptgen.js";

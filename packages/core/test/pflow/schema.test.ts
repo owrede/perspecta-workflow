@@ -87,6 +87,33 @@ describe("Port.orphan", () => {
   });
 });
 
+describe("Port.projection", () => {
+  it("round-trips a contract output port carrying a projection path", () => {
+    const withProjection = {
+      ...MINIMAL,
+      nodes: [
+        { id: "in", kind: "input", label: "In", inputs: [], outputs: [{ id: "o", name: "args", schema: { type: "any" } }] },
+        {
+          id: "mem", kind: "mcp", label: "Memory",
+          inputs: [],
+          outputs: [{ id: "out:doc_id", name: "doc_id", schema: { type: "string" }, projection: "write_back.doc_id" }],
+          config: { mcpServer: "vault-memory", contract: "meeting-prep" },
+        },
+        ...MINIMAL.nodes.slice(1),
+      ],
+    };
+    const doc = parsePflow(JSON.stringify(withProjection));
+    expect(doc.nodes[1].outputs[0].projection).toBe("write_back.doc_id");
+    // serialize → parse again: the projection survives
+    const again = parsePflow(JSON.stringify(doc));
+    expect(again.nodes[1].outputs[0].projection).toBe("write_back.doc_id");
+  });
+  it("parses a port with no projection field (backward compat)", () => {
+    const doc = parsePflow(JSON.stringify(MINIMAL));
+    expect(doc.nodes[0].outputs[0].projection).toBeUndefined();
+  });
+});
+
 describe("editor.inspectorWidth", () => {
   it("parses a document that carries inspectorWidth", () => {
     const doc = parsePflow(

@@ -38,6 +38,10 @@ export const PortZ = z.object({
    *  still referenced by a wire — kept so the wire survives as a dashed
    *  (inactive) edge until the user clears it. */
   orphan: z.boolean().optional(),
+  /** Contract-mode output ports only: dotted access path off the node's result
+   *  bundle (e.g. "write_back.doc_id"); "" = the whole bundle. Codegen compiles
+   *  downstream reads of the port into the projected expression. */
+  projection: z.string().optional(),
 });
 export type Port = z.infer<typeof PortZ>;
 

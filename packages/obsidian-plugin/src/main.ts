@@ -17,6 +17,8 @@ import { applyMcpExpectedGrants } from "./views/pflow-editor/flow-map.js";
 import { parseMcpJsonServers } from "./mcp/mcpJson.js";
 import { buildMcpSetupPrompt, MCP_SERVER_ARTIFACT, MCP_PROBE_ARTIFACT } from "./mcp/setupPrompt.js";
 import { NodeMcpProbe, probedToolsToRegistry } from "./mcp/probe.js";
+import { NodeContractDescriber, type RawContractDescription } from "./mcp/describeContract.js";
+import { VAULT_MEMORY_SERVER } from "@perspecta/core";
 
 interface NoteFileRef { id: string; file: string; }
 
@@ -144,6 +146,17 @@ export default class PerspectaWorkflowPlugin extends Plugin {
     this.settings.mcpRegistry = { ...reg };
     await this.saveSettings();
     new Notice(`Perspecta: probed ${name} — ${reg[name].probe.status}`);
+  }
+
+  /** Describe a vault-memory contract (canonical name or vm_ slug) for the
+   *  pflow editor's contract picker. One child-process MCP call via the same
+   *  bundled helper the probe uses. */
+  async describeVaultMemoryContract(contract: string): Promise<RawContractDescription> {
+    const server = (await this.listMcpServers()).find((s) => s.name === VAULT_MEMORY_SERVER);
+    if (!server) throw new Error(`"${VAULT_MEMORY_SERVER}" is not configured in this vault's .mcp.json`);
+    const probe = await this.pluginArtifactAbsPath(MCP_PROBE_ARTIFACT);
+    if ("reason" in probe) throw new Error(probe.reason);
+    return new NodeContractDescriber(probe.absPath).describe(server, contract);
   }
 
   private activeCanvas(): TFile | null {

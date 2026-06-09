@@ -56,6 +56,7 @@
     onConnect,
     onDropConnect,
     onAddNode,
+    onAddMemory,
     onDeleteRequest,
   }: {
     flowNodes: FlowNode[];
@@ -69,6 +70,7 @@
     onConnect: (c: { source: string; sourceHandle: string; target: string; targetHandle: string }) => void;
     onDropConnect: (d: { fromNodeId: string; fromPortId: string; fromType: "source" | "target"; toNodeId: string }) => void;
     onAddNode: (kind: NodeKind, x: number, y: number) => void;
+    onAddMemory: (x: number, y: number) => void;
     onDeleteRequest: (nodeId: string) => void;
   } = $props();
 
@@ -262,6 +264,7 @@
     <FlowControls
       {selectedId}
       {onAddNode}
+      {onAddMemory}
       {onDeleteRequest}
       bind:requestPaneMenu
       bind:requestNodeMenu

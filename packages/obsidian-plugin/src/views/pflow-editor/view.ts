@@ -101,6 +101,9 @@ export class PflowEditorView extends TextFileView {
         // server or changes permissions in Settings while this editor is open,
         // the picker/grant-summary won't refresh until the file is reopened.
         registry: this.plugin.settings.mcpRegistry,
+        // Contract picker support: one describe_contract call through the
+        // plugin's child-process MCP plumbing (vault-memory only).
+        onDescribeContract: (contract: string) => this.plugin.describeVaultMemoryContract(contract),
       },
     });
   }

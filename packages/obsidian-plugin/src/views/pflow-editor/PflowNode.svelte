@@ -7,10 +7,18 @@
 
   // Vertical geometry (px). The header is fixed-height; each port is one row.
   // A Handle is pinned to the card edge at each port row's vertical center.
+  // MCP nodes carry extra fixed-height chip rows between header and ports (the
+  // service line; in contract mode also a write-back badge) — the handles must
+  // account for them or the dots sit one row above their port.
   const HEADER = 40;
   const ROW = 24;
-  const inTop = (i: number) => HEADER + i * ROW + ROW / 2;
-  const outTop = (i: number) => HEADER + (data.inputs.length + i) * ROW + ROW / 2;
+  const CHIP = 24;
+  let chipRows = $derived(
+    data.kind === "mcp" ? 1 + (data.contract && data.writesTo?.length ? 1 : 0) : 0,
+  );
+  let portBase = $derived(HEADER + chipRows * CHIP);
+  const inTop = (i: number) => portBase + i * ROW + ROW / 2;
+  const outTop = (i: number) => portBase + (data.inputs.length + i) * ROW + ROW / 2;
 
   // Per-kind icon (Lucide path, viewBox 0 0 24 24), shared with the inspector
   // via kind-info so node + inspector never drift.
@@ -24,7 +32,7 @@
   let outSide = $derived(flipped ? Position.Left : Position.Right);
 </script>
 
-<div class="pflow-node pflow-node--{data.kind}" class:pflow-node--flipped={flipped}>
+<div class="pflow-node pflow-node--{data.kind}" class:pflow-node--flipped={flipped} class:pflow-node--memory={!!data.contract}>
   <div class="pflow-node__header">
     <span class="pflow-node__title">{data.label}</span>
     <svg
@@ -44,9 +52,20 @@
   </div>
 
   {#if data.kind === "mcp"}
-    <div class="pflow-node__service" class:pflow-node__service--unset={!data.mcpServer}>
-      {data.mcpServer ? `↗ ${data.mcpServer}` : "no service"}
-    </div>
+    {#if data.contract}
+      <div class="pflow-node__service pflow-node__service--memory" title="vault-memory contract">
+        🧠 {data.contract}
+      </div>
+      {#if data.writesTo?.length}
+        <div class="pflow-node__writes" title="Writes a memory into the vault via the contract's sink.">
+          ✎ → {data.writesTo.join(", ")}
+        </div>
+      {/if}
+    {:else}
+      <div class="pflow-node__service" class:pflow-node__service--unset={!data.mcpServer}>
+        {data.mcpServer ? `↗ ${data.mcpServer}` : "no service"}
+      </div>
+    {/if}
   {/if}
 
   <div class="pflow-node__ports">
@@ -113,6 +132,9 @@
   .pflow-node--synthesize,
   .pflow-node--branch { --pflow-accent: var(--color-cyan, #2e9bd9); }
   .pflow-node--script { --pflow-accent: var(--text-faint, #888); }
+  /* A vault-memory contract node reads as a Memory node: own accent, loud and
+     distinct from the generic MCP plug (it lowers through the same machinery). */
+  .pflow-node--memory { --pflow-accent: var(--color-pink, #d6409f); }
 
   /* Selected state: xyflow adds `.selected` to the node wrapper it renders
      around this component. Style the ring from that, so selection is owned by
@@ -149,7 +171,11 @@
   }
 
   .pflow-node__service {
-    padding: 2px 10px 4px;
+    display: flex;
+    align-items: center;
+    height: 24px;
+    box-sizing: border-box;
+    padding: 0 10px;
     font-size: var(--font-ui-smaller);
     font-weight: 500;
     color: var(--text-accent);
@@ -161,6 +187,21 @@
     color: var(--text-error, var(--text-muted));
     font-style: italic;
     font-weight: 400;
+  }
+  .pflow-node__service--memory {
+    color: var(--pflow-accent, var(--text-accent));
+  }
+  .pflow-node__writes {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    font-size: var(--font-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .pflow-node__ports { padding: 4px 0; }

@@ -1,6 +1,6 @@
 import { MarkerType } from "@xyflow/system";
-import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants, snapshotGrants } from "@perspecta/core";
-import type { TokenPort, TokenType, McpRegistry } from "@perspecta/core";
+import { NODE_KINDS, parsePromptTokens, portSchemaTypeForToken, resolveServerGrants, snapshotGrants, nodeContractMode, contractSnapshotOf, VAULT_MEMORY_SERVER } from "@perspecta/core";
+import type { TokenPort, TokenType, McpRegistry, ContractSnapshot } from "@perspecta/core";
 import type { PflowDocument, PflowNode, Port, Wire, NodeKind } from "@perspecta/core";
 import { templateForMode, DEFAULT_EVAL_MODE, type EvalMode } from "./eval-templates.js";
 
@@ -19,6 +19,13 @@ export interface FlowNodeData {
   evalMode?: string;
   /** Eval node block-on-fail flag (config.blockOnFail), surfaced for the toggle. */
   blockOnFail?: boolean;
+  /** Contract mode (vault-memory mcp node with a selected contract): the
+   *  canonical contract name, write-back badge data, pinned literals, and the
+   *  snapshot's per-input required flags — derived from config per render. */
+  contract?: string;
+  writesTo?: string[];
+  contractInputs?: Record<string, unknown>;
+  contractRequired?: Record<string, boolean>;
   inputs: RenderPort[];
   outputs: RenderPort[];
 }
@@ -76,6 +83,8 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
       ...p,
       wired: set.has(`${n.id} ${p.id}`),
     });
+    const contract = nodeContractMode(n);
+    const snap = contract !== undefined ? contractSnapshotOf(n) : undefined;
     return {
       id: n.id,
       type: "pflow" as const,
@@ -88,6 +97,10 @@ export function toFlowNodes(doc: PflowDocument): FlowNode[] {
         mcpServer: n.config?.mcpServer as string | undefined,
         evalMode: n.config?.mode as string | undefined,
         blockOnFail: n.config?.blockOnFail === true,
+        contract,
+        writesTo: snap?.writesTo,
+        contractInputs: contract !== undefined ? (n.config?.contractInputs as Record<string, unknown> | undefined) : undefined,
+        contractRequired: snap ? Object.fromEntries(snap.inputs.map((d) => [d.name, d.required])) : undefined,
         inputs: n.inputs.map(markWired(wiredIn)),
         outputs: n.outputs.map(markWired(wiredOut)),
       },
@@ -661,14 +674,112 @@ export function orphanedWiresForKind(doc: PflowDocument, nodeId: string, kind: N
 }
 
 /** Set (or clear) an mcp node's bound server (config.mcpServer). An empty
- *  `server` removes the key rather than persisting "". Immutable. */
+ *  `server` removes the key rather than persisting "". Changing the server also
+ *  drops any contract state — a contract is meaningful only on vault-memory,
+ *  and stale snapshots must not survive a rebind. Immutable. */
 export function applyMcpServer(doc: PflowDocument, nodeId: string, server: string): PflowDocument {
   return {
     ...doc,
     nodes: doc.nodes.map((n) => {
       if (n.id !== nodeId) return n;
-      const { mcpServer: _omit, ...rest } = n.config ?? {};
+      const { mcpServer: _omit, contract: _c, contractSnapshot: _cs, contractInputs: _ci, ...rest } = n.config ?? {};
       return { ...n, config: server ? { ...rest, mcpServer: server } : rest };
+    }),
+  };
+}
+
+/** vault-memory contracts known to the probed registry: its vm_* dynamic tools,
+ *  prefix stripped (slug form, e.g. "meeting_prep"). The slug is a valid
+ *  describe_contract lookup. Sorted. Pure. */
+export function contractsFromRegistry(registry: McpRegistry): string[] {
+  const tools = registry[VAULT_MEMORY_SERVER]?.tools ?? {};
+  return Object.keys(tools)
+    .filter((t) => t.startsWith("vm_"))
+    .map((t) => t.slice("vm_".length))
+    .filter((n) => n.length > 0)
+    .sort();
+}
+
+/** Ports regenerated from a contract snapshot. An input pinned in
+ *  `pins` renders/validates as optional (the pin satisfies it); output ports
+ *  carry their projection path for codegen. Pure. */
+export function portsFromContractSnapshot(
+  snapshot: ContractSnapshot,
+  pins: Record<string, unknown>,
+): { inputs: Port[]; outputs: Port[] } {
+  const pinned = (name: string) => Object.prototype.hasOwnProperty.call(pins, name);
+  const inputs: Port[] = snapshot.inputs.map((d) => ({
+    id: `in:${d.name}`,
+    name: d.name,
+    schema: d.schema,
+    required: d.required && !pinned(d.name),
+  }));
+  const outputs: Port[] = snapshot.outputs.map((d) => ({
+    id: `out:${d.name}`,
+    name: d.name,
+    schema: d.schema,
+    projection: d.projection,
+  }));
+  return { inputs, outputs };
+}
+
+/** Select a contract on a vault-memory mcp node: stamp `config.contract` (the
+ *  CANONICAL name from describe_contract) + `config.contractSnapshot`,
+ *  regenerate ports from the snapshot, prune pins of inputs the contract no
+ *  longer has, and drop wires whose port vanished. Immutable. */
+export function applyContract(
+  doc: PflowDocument,
+  nodeId: string,
+  contract: string,
+  snapshot: ContractSnapshot,
+): PflowDocument {
+  const target = doc.nodes.find((n) => n.id === nodeId);
+  if (!target) return doc;
+  const inputNames = new Set(snapshot.inputs.map((d) => d.name));
+  const prevPins = (target.config?.contractInputs ?? {}) as Record<string, unknown>;
+  const pins = Object.fromEntries(Object.entries(prevPins).filter(([k]) => inputNames.has(k)));
+  const { inputs, outputs } = portsFromContractSnapshot(snapshot, pins);
+  const inIds = new Set(inputs.map((p) => p.id));
+  const outIds = new Set(outputs.map((p) => p.id));
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) =>
+      n.id === nodeId
+        ? { ...n, inputs, outputs, config: { ...n.config, contract, contractSnapshot: snapshot, contractInputs: pins } }
+        : n,
+    ),
+    wires: doc.wires.filter((w) => {
+      if (w.to.nodeId === nodeId && !inIds.has(w.to.portId)) return false;
+      if (w.from.nodeId === nodeId && !outIds.has(w.from.portId)) return false;
+      return true;
+    }),
+  };
+}
+
+/** Pin a literal into `config.contractInputs[name]` (value !== undefined) or
+ *  clear the pin (undefined). The same-named port's `required` flag follows:
+ *  pinned → satisfied (false); unpinned → back to the snapshot's flag.
+ *  Immutable. */
+export function applyPinContractInput(
+  doc: PflowDocument,
+  nodeId: string,
+  name: string,
+  value: unknown,
+): PflowDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+      const pins = { ...((n.config?.contractInputs ?? {}) as Record<string, unknown>) };
+      if (value === undefined) delete pins[name];
+      else pins[name] = value;
+      const def = contractSnapshotOf(n)?.inputs.find((d) => d.name === name);
+      const inputs = n.inputs.map((p) =>
+        p.name === name && def !== undefined
+          ? { ...p, required: def.required && !Object.prototype.hasOwnProperty.call(pins, name) }
+          : p,
+      );
+      return { ...n, inputs, config: { ...n.config, contractInputs: pins } };
     }),
   };
 }

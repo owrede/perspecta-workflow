@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { App } from "obsidian";
   import type { PflowDocument, NodeKind } from "@perspecta/core";
-  import { mcpLints, summarizeWorkflowResources } from "@perspecta/core";
+  import { mcpLints, summarizeWorkflowResources, VAULT_MEMORY_SERVER } from "@perspecta/core";
   import CanvasPane from "./canvas-pane.svelte";
   import InspectorPane from "./inspector-pane.svelte";
   import { confirmModal } from "./confirm-modal.js";
@@ -31,10 +31,13 @@
     applyEvalMode,
     applyEvalModeFlagOnly,
     applyBlockOnFail,
+    applyContract,
+    applyPinContractInput,
     DEFAULT_INSPECTOR_WIDTH,
     MIN_INSPECTOR_WIDTH,
     MAX_INSPECTOR_WIDTH,
   } from "./flow-map.js";
+  import { toContractSnapshot, type RawContractDescription } from "../../mcp/describeContract.js";
 
   let {
     file,
@@ -42,6 +45,7 @@
     onChange,
     onExport,
     registry,
+    onDescribeContract,
   }: {
     file: PflowDocument;
     app: App;
@@ -51,6 +55,9 @@
     // view supplies this (it owns vault access); the inspector renders the button.
     onExport: (doc: PflowDocument) => Promise<string>;
     registry: import("@perspecta/core").McpRegistry;
+    // Describe a vault-memory contract (canonical name or vm_ slug) via the
+    // plugin's child-process MCP plumbing. The view supplies this.
+    onDescribeContract: (contract: string) => Promise<RawContractDescription>;
   } = $props();
 
   let doc = $state<PflowDocument>(file);
@@ -135,6 +142,19 @@
     commit(applyMcpServer(doc, nodeId, server));
   }
 
+  // Select a vault-memory contract: one describe_contract call, snapshot it
+  // into the node, regenerate ports. Errors propagate to the inspector's
+  // contract picker (it renders the message inline).
+  async function onContract(nodeId: string, contract: string) {
+    const raw = await onDescribeContract(contract);
+    const snapshot = toContractSnapshot(raw, new Date().toISOString());
+    commit(applyContract(doc, nodeId, raw.name ?? contract, snapshot));
+  }
+
+  function onPinInput(nodeId: string, name: string, value: unknown) {
+    commit(applyPinContractInput(doc, nodeId, name, value));
+  }
+
   async function onEvalMode(nodeId: string, mode: EvalMode) {
     const node = doc.nodes.find((n) => n.id === nodeId);
     const current = node?.prompt?.trim() ?? "";
@@ -211,6 +231,15 @@
     selectedId = next.nodes[next.nodes.length - 1].id;
   }
 
+  // The Memory node preset: an mcp node pre-bound to vault-memory, so the
+  // inspector opens straight on the contract picker.
+  function onAddMemory(x: number, y: number) {
+    const added = applyAddNode(doc, "mcp", "Memory", x, y);
+    const id = added.nodes[added.nodes.length - 1].id;
+    commit(applyMcpServer(added, id, VAULT_MEMORY_SERVER));
+    selectedId = id;
+  }
+
   async function onDeleteRequest(nodeId: string) {
     const node = doc.nodes.find((n) => n.id === nodeId);
     if (!node) return;
@@ -275,6 +304,7 @@
       {onConnect}
       {onDropConnect}
       {onAddNode}
+      {onAddMemory}
       {onDeleteRequest}
       selectedId={selectedId}
       onSelect={(id) => (selectedId = id)}
@@ -310,6 +340,8 @@
       {registry}
       mcpWarnings={mcpNodeWarnings}
       {onMcpServer}
+      {onContract}
+      {onPinInput}
       {onEvalMode}
       {onBlockOnFail}
       {resourceSummary}

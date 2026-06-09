@@ -27,12 +27,15 @@
   let {
     selectedId,
     onAddNode,
+    onAddMemory,
     onDeleteRequest,
     requestPaneMenu = $bindable(),
     requestNodeMenu = $bindable(),
   }: {
     selectedId: string | null;
     onAddNode: (kind: NodeKind, x: number, y: number) => void;
+    // Add an mcp node pre-bound to vault-memory (the Memory node preset).
+    onAddMemory: (x: number, y: number) => void;
     onDeleteRequest: (nodeId: string) => void;
     requestPaneMenu?: ((event: MouseEvent) => void) | null;
     requestNodeMenu?: ((node: Node, event: MouseEvent) => void) | null;
@@ -51,6 +54,15 @@
         item.setDisabled(!ok);
         if (ok) item.onClick(() => onAddNode(kind, pos.x, pos.y));
       });
+      // The Memory node preset rides directly under "Add mcp": the same node
+      // kind, pre-bound to vault-memory so the inspector opens straight on the
+      // contract picker.
+      if (kind === "mcp") {
+        menu.addItem((item) => {
+          item.setTitle("Add memory (vault-memory contract)");
+          item.onClick(() => onAddMemory(pos.x, pos.y));
+        });
+      }
     }
     menu.showAtMouseEvent(event);
   };

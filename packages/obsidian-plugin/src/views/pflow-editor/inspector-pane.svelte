@@ -12,12 +12,13 @@
 -->
 
 <script lang="ts">
-  import { NODE_KINDS, type NodeKind, type PflowError } from "@perspecta/core";
+  import { NODE_KINDS, VAULT_MEMORY_SERVER, type NodeKind, type PflowError } from "@perspecta/core";
   import type { FlowNodeData } from "./flow-map.js";
-  import { COMPILABLE_KINDS, grantSummary } from "./flow-map.js";
+  import { COMPILABLE_KINDS, grantSummary, contractsFromRegistry } from "./flow-map.js";
   import { KIND_INFO, FALLBACK_ICON, PROMPT_KINDS } from "./kind-info.js";
   import PromptField from "./prompt-field.svelte";
   import { isPortTokenLocked } from "./flow-map.js";
+  import { coerceContractLiteral, formatContractLiteral, contractSlug } from "./contract-ui.js";
   import type { TokenType } from "@perspecta/core";
 
   // Token type ↔ schema type mapping for the inspector's type picker.
@@ -50,6 +51,8 @@
     registry,
     mcpWarnings,
     onMcpServer,
+    onContract,
+    onPinInput,
     onEvalMode,
     onBlockOnFail,
     resourceSummary,
@@ -73,6 +76,11 @@
     registry: import("@perspecta/core").McpRegistry;
     mcpWarnings: PflowError[];
     onMcpServer: (nodeId: string, server: string) => void;
+    // Select a vault-memory contract (slug or canonical name); rejects with a
+    // message when describe_contract fails (cold server, unknown contract).
+    onContract: (nodeId: string, contract: string) => Promise<void>;
+    // Pin a typed literal into config.contractInputs[name]; undefined clears it.
+    onPinInput: (nodeId: string, name: string, value: unknown) => void;
     onEvalMode: (nodeId: string, mode: import("./eval-templates.js").EvalMode) => void;
     onBlockOnFail: (nodeId: string, value: boolean) => void;
     resourceSummary: import("@perspecta/core").WorkflowResourceSummary;
@@ -121,6 +129,63 @@
   const nodeWarnings = $derived(
     node ? mcpWarnings.filter((e) => e.nodeId === node.id) : [],
   );
+
+  // ── Contract mode (vault-memory mcp node) ────────────────────────────────
+  const isMemoryServer = $derived(node?.data.kind === "mcp" && node.data.mcpServer === VAULT_MEMORY_SERVER);
+  const isContractNode = $derived(isMemoryServer && !!node!.data.contract);
+  const contractOptions = $derived(isMemoryServer ? contractsFromRegistry(registry) : []);
+  const selectedContractSlug = $derived(node?.data.contract ? contractSlug(node.data.contract) : "");
+  let contractBusy = $state(false);
+  let contractErr = $state("");
+  // Per-input pin editor errors (typed coercion failures), keyed by input name.
+  let pinErrors = $state<Record<string, string>>({});
+  // Reset transient picker state when the selection moves to another node.
+  $effect(() => {
+    void node?.id;
+    contractErr = "";
+    contractBusy = false;
+    pinErrors = {};
+  });
+
+  async function pickContract(slug: string) {
+    if (!slug || !node) return;
+    contractBusy = true;
+    contractErr = "";
+    try {
+      await onContract(node.id, slug);
+    } catch (e) {
+      contractErr = (e as Error).message;
+    } finally {
+      contractBusy = false;
+    }
+  }
+
+  function isPinned(name: string): boolean {
+    return Object.prototype.hasOwnProperty.call(node?.data.contractInputs ?? {}, name);
+  }
+
+  function togglePin(name: string, schema: import("@perspecta/core").PortSchema, on: boolean) {
+    if (!node) return;
+    delete pinErrors[name];
+    if (!on) {
+      onPinInput(node.id, name, undefined);
+      return;
+    }
+    // Seed the pin with an empty literal of the right shape so the editor opens.
+    const seed = schema.type === "array" ? [] : schema.type === "object" ? {} : schema.type === "number" ? 0 : schema.type === "boolean" ? false : "";
+    onPinInput(node.id, name, seed);
+  }
+
+  function editPin(name: string, schema: import("@perspecta/core").PortSchema, text: string) {
+    if (!node) return;
+    const r = coerceContractLiteral(text, schema);
+    if (r.ok) {
+      pinErrors = Object.fromEntries(Object.entries(pinErrors).filter(([k]) => k !== name));
+      onPinInput(node.id, name, r.value);
+    } else {
+      pinErrors = { ...pinErrors, [name]: r.error };
+    }
+  }
 </script>
 
 <div class="pflow-inspector">
@@ -266,6 +331,42 @@
           <p class="pflow-insp__warn">⚠ {w.message}</p>
         {/each}
       </section>
+
+      {#if isMemoryServer}
+        <section class="pflow-insp__section">
+          <h3 class="pflow-insp__section-title">Contract</h3>
+          <p class="pflow-insp__help">
+            The named memory recipe this node instantiates. Selecting one fetches its
+            typed inputs and result shape and turns them into this node's ports.
+          </p>
+          <select
+            class="pflow-insp__input pflow-insp__select"
+            aria-label="Contract"
+            disabled={contractBusy}
+            value={selectedContractSlug}
+            onchange={(e) => pickContract((e.currentTarget as HTMLSelectElement).value)}
+          >
+            <option value="">— select a contract —</option>
+            {#if selectedContractSlug && !contractOptions.includes(selectedContractSlug)}
+              <option value={selectedContractSlug} disabled>{node.data.contract} (not in registry)</option>
+            {/if}
+            {#each contractOptions as c}<option value={c}>{c.replace(/_/g, "-")}</option>{/each}
+          </select>
+          {#if contractOptions.length === 0}
+            <p class="pflow-insp__help">No contracts found — probe <code>vault-memory</code> in Settings → MCP, and check the active vault has <code>_contracts/</code>.</p>
+          {/if}
+          {#if contractBusy}
+            <p class="pflow-insp__help">Fetching contract description…</p>
+          {:else if contractErr}
+            <p class="pflow-insp__warn">⚠ {contractErr}</p>
+          {/if}
+          {#if isContractNode && node.data.writesTo?.length}
+            <p class="pflow-insp__writes" title="This contract writes a memory into the vault via its internal sink — visible here, not wireable.">
+              ✎ writes → {node.data.writesTo.join(", ")}
+            </p>
+          {/if}
+        </section>
+      {/if}
     {/if}
 
     {#if node.data.kind === "eval"}
@@ -329,7 +430,7 @@
       </select>
     </section>
 
-    {#if showPrompt}
+    {#if showPrompt && !isContractNode}
       <section class="pflow-insp__section">
         <div class="pflow-insp__section-head">
           <h3 class="pflow-insp__section-title">Prompt</h3>
@@ -348,6 +449,61 @@
       </section>
     {/if}
 
+    {#if isContractNode}
+      <!-- ── Contract ports: derived from the contract, not editable. Each
+           input is either WIRED from upstream or PINNED to a literal. ── -->
+      <section class="pflow-insp__section">
+        <h3 class="pflow-insp__section-title">Inputs</h3>
+        <p class="pflow-insp__help">The contract's typed inputs. Wire a port from upstream, or pin a fixed value here — a required input needs one of the two.</p>
+        {#each node.data.inputs as p (p.id)}
+          <div class="pflow-insp__contract-input">
+            <div class="pflow-insp__contract-input-head">
+              <span class="pflow-insp__port-name">{p.name}</span>
+              <span class="pflow-insp__port-type">{p.schema.type}</span>
+              {#if node.data.contractRequired?.[p.name]}
+                <span class="pflow-insp__reqbadge">required</span>
+              {/if}
+              {#if p.wired}
+                <span class="pflow-insp__lockbadge" title="Connected from upstream.">wired</span>
+              {/if}
+              <label class="pflow-insp__pin-toggle" title="Pin a fixed value instead of wiring this input.">
+                <input
+                  type="checkbox"
+                  checked={isPinned(p.name)}
+                  onchange={(e) => togglePin(p.name, p.schema, (e.currentTarget as HTMLInputElement).checked)}
+                />
+                pin
+              </label>
+            </div>
+            {#if isPinned(p.name)}
+              <input
+                class="pflow-insp__input"
+                type="text"
+                placeholder={p.schema.type === "array" ? '["…"]' : p.schema.type}
+                value={formatContractLiteral(node.data.contractInputs?.[p.name])}
+                onchange={(e) => editPin(p.name, p.schema, (e.currentTarget as HTMLInputElement).value)}
+              />
+              {#if pinErrors[p.name]}
+                <p class="pflow-insp__warn">⚠ {pinErrors[p.name]}</p>
+              {/if}
+            {/if}
+          </div>
+        {/each}
+      </section>
+      <section class="pflow-insp__section">
+        <h3 class="pflow-insp__section-title">Outputs</h3>
+        <p class="pflow-insp__help">Derived from the contract's result shape; wire them downstream.</p>
+        {#each node.data.outputs as p (p.id)}
+          <div class="pflow-insp__contract-input-head">
+            <span class="pflow-insp__port-name">{p.name}</span>
+            <span class="pflow-insp__port-type">{p.schema.type}</span>
+            {#if p.projection && p.projection !== p.name}
+              <span class="pflow-insp__port-proj" title="Read from this path of the contract's result bundle.">.{p.projection}</span>
+            {/if}
+          </div>
+        {/each}
+      </section>
+    {:else}
     <section class="pflow-insp__section">
       <h3 class="pflow-insp__section-title">Ports</h3>
       <p class="pflow-insp__help">Define this node's connection points. A port declared by a prompt token shows a <span class="pflow-insp__lockbadge">from prompt</span> badge and is edited via the prompt; ports added here can be renamed, retyped, or removed.</p>
@@ -410,6 +566,7 @@
         <button class="pflow-insp__add-port" type="button" onclick={() => onAddPort(node!.id, "out", nextPortName(node!.data.outputs, "out"), "string")}>+ Add output</button>
       {/if}
     </section>
+    {/if}
   {/if}
 </div>
 
@@ -706,5 +863,66 @@
   .pflow-insp__add-port:hover {
     color: var(--text-normal);
     border-color: var(--interactive-accent);
+  }
+
+  /* ── Contract mode (vault-memory) ── */
+  .pflow-insp__writes {
+    margin: var(--size-2-3) 0 0 0;
+    font-size: var(--font-ui-smaller);
+    color: var(--color-pink, #d6409f);
+  }
+  .pflow-insp__contract-input {
+    margin-bottom: var(--size-2-3);
+  }
+  .pflow-insp__contract-input-head {
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-2);
+    margin-bottom: var(--size-2-1);
+    min-width: 0;
+  }
+  .pflow-insp__port-name {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pflow-insp__port-type {
+    font-family: var(--font-monospace);
+    font-size: var(--font-smaller);
+    color: var(--text-faint);
+  }
+  .pflow-insp__port-proj {
+    font-family: var(--font-monospace);
+    font-size: var(--font-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pflow-insp__reqbadge {
+    flex: none;
+    padding: 0 var(--size-2-1);
+    font-size: var(--font-smaller);
+    color: var(--text-error, var(--text-muted));
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    white-space: nowrap;
+  }
+  .pflow-insp__pin-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pflow-insp__pin-toggle input {
+    margin: 0;
+    cursor: pointer;
   }
 </style>

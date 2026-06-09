@@ -1,8 +1,25 @@
-import { buildWorkflowArtifacts, type PflowDocument, type McpRegistry } from "@perspecta/core";
+import { buildWorkflowArtifacts, mcpLints, nodeContractMode, type PflowDocument, type McpRegistry } from "@perspecta/core";
 
 /** " + N connector agent(s)" suffix for export notices, properly pluralized. */
 export function formatConnectorSuffix(count: number): string {
   return count ? ` + ${count} connector agent${count === 1 ? "" : "s"}` : "";
+}
+
+/** A "⚠ …" suffix naming each STALE memory contract (selected contract no
+ *  longer in the vault's probed vault-memory registry) for export notices.
+ *  Empty when nothing is stale. The blocking memory lints never reach this —
+ *  buildWorkflowArtifacts throws on them before any write. */
+export function formatContractStaleSuffix(doc: PflowDocument, registry: McpRegistry): string {
+  const stale = mcpLints(doc, registry).filter((e) => e.rule === "memory-contract-stale");
+  if (stale.length === 0) return "";
+  const names = stale
+    .map((e) => doc.nodes.find((n) => n.id === e.nodeId))
+    .map((n) => (n ? nodeContractMode(n) : undefined))
+    .filter((c): c is string => c !== undefined)
+    .map((c) => `"${c}"`);
+  const noun = stale.length === 1 ? "node" : "nodes";
+  const contractNoun = names.length === 1 ? "contract" : "contracts";
+  return ` — ⚠ ${stale.length} ${noun}: ${contractNoun} ${names.join(", ")} not found in this vault's vault-memory registry (re-probe or check the active vault)`;
 }
 
 /** The slice of Obsidian's vault adapter this helper needs. Declared structurally

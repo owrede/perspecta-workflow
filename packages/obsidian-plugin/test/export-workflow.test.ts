@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { exportClaudeCodeWorkflowFile, type WorkflowWriteAdapter } from "../src/commands/exportWorkflow.js";
+import { exportClaudeCodeWorkflowFile, formatContractStaleSuffix, type WorkflowWriteAdapter } from "../src/commands/exportWorkflow.js";
 import type { PflowDocument } from "@perspecta/core";
 import type { McpRegistry } from "@perspecta/core";
 
@@ -91,5 +91,69 @@ describe("exportClaudeCodeWorkflowFile", () => {
     expect(files.get(".claude/agents/wf-fig.md")).toContain("mcp__figma__get_design");
     expect(res.subagentPaths).toContain(".claude/agents/wf-fig.md");
     expect(res.workflowPath).toBe(".claude/workflows/wf.js");
+  });
+});
+
+// A bound memory node whose contract is (or is not) in the live registry.
+const MEMORY_DOC = {
+  pflowFormatVersion: 1, workflow: { name: "mwf", description: "d" },
+  nodes: [
+    { id: "in", kind: "input", label: "In", inputs: [], outputs: [{ id: "p", name: "meeting_path", schema: { type: "string" } }] },
+    { id: "mem", kind: "mcp", label: "Memory",
+      inputs: [
+        { id: "in:vault", name: "vault", schema: { type: "string" }, required: false },
+        { id: "in:meeting_path", name: "meeting_path", schema: { type: "string" }, required: true },
+      ],
+      outputs: [{ id: "out:bundle", name: "bundle", schema: { type: "any" }, projection: "" }],
+      config: {
+        mcpServer: "vault-memory", contract: "meeting-prep",
+        contractInputs: { vault: "inim" },
+        contractSnapshot: {
+          inputs: [
+            { name: "vault", schema: { type: "string" }, required: true },
+            { name: "meeting_path", schema: { type: "string" }, required: true },
+          ],
+          outputs: [{ name: "bundle", schema: { type: "any" }, projection: "" }],
+          writesTo: ["default"],
+        },
+      } },
+    { id: "end", kind: "output", label: "Out", inputs: [{ id: "in", name: "bundle", schema: { type: "any" }, required: true }], outputs: [] },
+  ],
+  wires: [
+    { from: { nodeId: "in", portId: "p" }, to: { nodeId: "mem", portId: "in:meeting_path" } },
+    { from: { nodeId: "mem", portId: "out:bundle" }, to: { nodeId: "end", portId: "in" } },
+  ],
+} as unknown as PflowDocument;
+
+function vaultMemoryReg(withTool: boolean): McpRegistry {
+  return {
+    "vault-memory": {
+      whitelisted: true, probe: { status: "hot" },
+      groupDefaults: { read: "ask", interactive: "ask", write: "ask" },
+      tools: withTool ? { vm_meeting_prep: { group: "interactive", groupSource: "heuristic", permission: "allow" } } : {},
+    },
+  };
+}
+
+describe("formatContractStaleSuffix", () => {
+  it("names a stale contract in the export feedback", () => {
+    const suffix = formatContractStaleSuffix(MEMORY_DOC, vaultMemoryReg(false));
+    expect(suffix).toContain("1 node");
+    expect(suffix).toContain('"meeting-prep"');
+    expect(suffix).toContain("not found in this vault's vault-memory registry");
+  });
+  it("is empty when the contract is present in the registry", () => {
+    expect(formatContractStaleSuffix(MEMORY_DOC, vaultMemoryReg(true))).toBe("");
+  });
+  it("a stale contract still EXPORTS (non-blocking) while a missing contract blocks", async () => {
+    const { adapter, files } = fakeAdapter();
+    await exportClaudeCodeWorkflowFile(adapter, MEMORY_DOC, vaultMemoryReg(false));
+    expect(files.has(".claude/workflows/mwf.js")).toBe(true);
+
+    const noContract = JSON.parse(JSON.stringify(MEMORY_DOC)) as PflowDocument;
+    (noContract.nodes[1].config as Record<string, unknown>).contract = undefined;
+    const { adapter: a2, files: f2 } = fakeAdapter();
+    await expect(exportClaudeCodeWorkflowFile(a2, noContract, vaultMemoryReg(true))).rejects.toThrow(/contract/i);
+    expect(f2.size).toBe(0);
   });
 });

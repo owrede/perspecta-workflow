@@ -11,7 +11,7 @@ import { ColorWatcher } from "./live/colorWatcher.js";
 import { attachNodeMenu } from "./live/nodeMenu.js";
 import { PerspectaSettingTab, DEFAULT_SETTINGS, type PerspectaSettings } from "./settings.js";
 import { buildNodeNote, addFileNodeToCanvas } from "./commands/insertNode.js";
-import { exportClaudeCodeWorkflowFile, formatConnectorSuffix } from "./commands/exportWorkflow.js";
+import { exportClaudeCodeWorkflowFile, formatConnectorSuffix, formatContractStaleSuffix } from "./commands/exportWorkflow.js";
 import { PflowEditorView, VIEW_TYPE_PFLOW } from "./views/pflow-editor/view.js";
 import { applyMcpExpectedGrants } from "./views/pflow-editor/flow-map.js";
 import { parseMcpJsonServers } from "./mcp/mcpJson.js";
@@ -178,7 +178,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       const view = this.app.workspace.getActiveViewOfType(PflowEditorView);
       if (view?.getDocument() === doc) view.setDocument(stamped);
       const res = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, stamped, this.settings.mcpRegistry);
-      new Notice(`Perspecta Workflow: exported ${res.workflowPath}${formatConnectorSuffix(res.subagentPaths.length)}`);
+      new Notice(`Perspecta Workflow: exported ${res.workflowPath}${formatConnectorSuffix(res.subagentPaths.length)}${formatContractStaleSuffix(stamped, this.settings.mcpRegistry)}`);
     } catch (e) {
       new Notice(`Perspecta Workflow: export failed — ${(e as Error).message}`);
     }

@@ -1,4 +1,5 @@
-import type { PortSchema, PflowNode } from "./schema.js";
+import type { PortSchema, PflowNode, PflowDocument } from "./schema.js";
+import { inWires } from "./topo.js";
 
 /**
  * vault-memory contract snapshot — the typed bridge between a contract's
@@ -159,6 +160,35 @@ export function nodeContractMode(node: PflowNode): string | undefined {
  *  tool-name charset hardened to underscores). Mirrors vault-memory's slugify. */
 export function vmToolName(contract: string): string {
   return `vm_${contract.replace(/-/g, "_").replace(/[^A-Za-z0-9_]/g, "_")}`;
+}
+
+/** The node's stored contract snapshot, when it carries a well-formed one. */
+export function contractSnapshotOf(node: PflowNode): ContractSnapshot | undefined {
+  const s = node.config?.contractSnapshot;
+  if (typeof s !== "object" || s === null) return undefined;
+  if (!Array.isArray((s as { inputs?: unknown }).inputs)) return undefined;
+  return s as unknown as ContractSnapshot;
+}
+
+/** Names of the node's REQUIRED contract inputs (per its snapshot) that are
+ *  neither wired (no incoming wire on the same-named port) nor pinned
+ *  (`config.contractInputs[name]` absent). Empty without a snapshot — there is
+ *  nothing to check against. Drives the blocking memory-input-unbound lint and
+ *  the export-time throw. Pure. */
+export function unboundRequiredContractInputs(doc: PflowDocument, node: PflowNode): string[] {
+  const snap = contractSnapshotOf(node);
+  if (!snap) return [];
+  const pins = (node.config?.contractInputs ?? {}) as Record<string, unknown>;
+  const incoming = inWires(doc, node.id);
+  const unbound: string[] = [];
+  for (const def of snap.inputs) {
+    if (!def.required) continue;
+    if (Object.prototype.hasOwnProperty.call(pins, def.name)) continue;
+    const port = node.inputs.find((p) => p.name === def.name);
+    const wired = port !== undefined && incoming.some((w) => w.to.portId === port.id);
+    if (!wired) unbound.push(def.name);
+  }
+  return unbound;
 }
 
 /** Build the full snapshot from a describe_contract result. Pure. */

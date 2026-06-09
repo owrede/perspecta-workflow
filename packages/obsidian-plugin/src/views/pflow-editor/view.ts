@@ -2,7 +2,7 @@ import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount } from "svelte";
 import { parsePflow, type PflowDocument } from "@perspecta/core";
 import { dedupeDuplicateNamedPorts, applyMcpExpectedGrants } from "./flow-map.js";
-import { exportClaudeCodeWorkflowFile, formatConnectorSuffix } from "../../commands/exportWorkflow.js";
+import { exportClaudeCodeWorkflowFile, formatConnectorSuffix, formatContractStaleSuffix } from "../../commands/exportWorkflow.js";
 import Editor from "./editor.svelte";
 import type PerspectaWorkflowPlugin from "../../main.js";
 
@@ -95,7 +95,7 @@ export class PflowEditorView extends TextFileView {
           this.current = stamped;
           this.requestSave();
           const res = await exportClaudeCodeWorkflowFile(this.app.vault.adapter, stamped, this.plugin.settings.mcpRegistry);
-          return `${res.workflowPath}${formatConnectorSuffix(res.subagentPaths.length)}`;
+          return `${res.workflowPath}${formatConnectorSuffix(res.subagentPaths.length)}${formatContractStaleSuffix(stamped, this.plugin.settings.mcpRegistry)}`;
         },
         // NOTE (v1): snapshot of the registry at mount. If the user probes a
         // server or changes permissions in Settings while this editor is open,

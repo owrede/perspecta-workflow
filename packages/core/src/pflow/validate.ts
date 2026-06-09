@@ -1,6 +1,12 @@
 import type { PortSchema } from "./schema.js";
 import type { McpRegistry } from "./mcp-registry.js";
 import { isPolicyStricter } from "./mcp-registry.js";
+import {
+  VAULT_MEMORY_SERVER,
+  nodeContractMode,
+  vmToolName,
+  unboundRequiredContractInputs,
+} from "./contract.js";
 
 /** Shallow M1 port-compatibility. `any` joins anything; scalars must match
  *  exactly; arrays must agree on item type (missing items === any); objects
@@ -145,6 +151,23 @@ export function mcpLints(doc: PflowDocument, registry: McpRegistry): PflowError[
       const stricter = isPolicyStricter(expected, reg);
       if (stricter.length) {
         errors.push({ rule: "mcp-policy-stricter", message: `MCP node ${node.id}: vault policy is stricter than expected for "${server}" — affected tools: ${stricter.join(", ")}`, nodeId: node.id });
+      }
+    }
+    // ── Memory (vault-memory contract) lints — gated on the server so generic
+    // MCP nodes are unaffected. contract-missing and input-unbound are BLOCKING
+    // (buildWorkflowArtifacts refuses to export, like mcp-server-missing);
+    // contract-stale is informational.
+    if (server === VAULT_MEMORY_SERVER) {
+      const contract = nodeContractMode(node);
+      if (contract === undefined) {
+        errors.push({ rule: "memory-contract-missing", message: `Memory node ${node.id}: no contract selected — pick a vault-memory contract in the inspector`, nodeId: node.id });
+      } else {
+        for (const name of unboundRequiredContractInputs(doc, node)) {
+          errors.push({ rule: "memory-input-unbound", message: `Memory node ${node.id}: required contract input "${name}" is neither wired nor pinned`, nodeId: node.id });
+        }
+        if (reg.probe.status === "hot" && !(vmToolName(contract) in reg.tools)) {
+          errors.push({ rule: "memory-contract-stale", message: `Memory node ${node.id}: contract "${contract}" is not in this vault's vault-memory registry — re-probe to refresh, or check the active vault`, nodeId: node.id });
+        }
       }
     }
   }

@@ -13,7 +13,12 @@ import {
 } from "./emit-kinds.js";
 import type { McpRegistryServer, McpRegistry } from "../pflow/mcp-registry.js";
 import { resolveServerGrants, DEFAULT_GROUP_DEFAULTS } from "../pflow/mcp-registry.js";
-import { nodeContractMode, vmToolName } from "../pflow/contract.js";
+import {
+  VAULT_MEMORY_SERVER,
+  nodeContractMode,
+  vmToolName,
+  unboundRequiredContractInputs,
+} from "../pflow/contract.js";
 
 /** JSON.stringify yields a spec-compliant double-quoted JS string literal with
  *  correct escaping of quotes, backslashes, and control chars. */
@@ -553,6 +558,18 @@ export function buildWorkflowArtifacts(doc: PflowDocument, registry: McpRegistry
     const server = (node.config?.mcpServer as string | undefined) ?? "";
     if (!server) {
       throw new Error(`MCP node "${node.id}" has no service selected — pick a server in the inspector before exporting (it would otherwise emit a dangling agentType).`);
+    }
+    if (server === VAULT_MEMORY_SERVER) {
+      // Blocking memory lints, mirrored here so export refuses exactly what the
+      // inspector flags (memory-contract-missing / memory-input-unbound).
+      const contract = nodeContractMode(node);
+      if (contract === undefined) {
+        throw new Error(`Memory node "${node.id}" has no contract selected — pick a vault-memory contract in the inspector before exporting.`);
+      }
+      const unbound = unboundRequiredContractInputs(doc, node);
+      if (unbound.length > 0) {
+        throw new Error(`Memory node "${node.id}": required contract input(s) ${unbound.map((n) => `"${n}"`).join(", ")} are neither wired nor pinned.`);
+      }
     }
     const name = mcpAgentTypeName(doc, node);
     const serverReg: McpRegistryServer = registry[server] ?? { whitelisted: false, groupDefaults: DEFAULT_GROUP_DEFAULTS, probe: { status: "cold" }, tools: {} };

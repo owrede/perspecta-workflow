@@ -24,6 +24,10 @@ export const DEFAULT_SETTINGS: PerspectaSettings = {
   mcpRegistry: {},
 };
 
+/** Synthetic dropdown value meaning "the group's tools are not uniform" — shown
+ *  (and selected, as a no-op) only when there's a deviation. Not a real permission. */
+const GROUP_CUSTOM_SENTINEL = "__custom__";
+
 export class PerspectaSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: PerspectaWorkflowPlugin) {
     super(app, plugin);
@@ -33,6 +37,8 @@ export class PerspectaSettingTab extends PluginSettingTab {
   private mcpView: { mode: "list" } | { mode: "detail"; server: string } = { mode: "list" };
 
   display(): void {
+    // Reopen the settings panel on the server list, not a stale detail sub-screen.
+    this.mcpView = { mode: "list" };
     const store = this.plugin.settingsStore;
     renderSettingsShell(this.containerEl, {
       plugin: this.plugin,
@@ -151,7 +157,8 @@ export class PerspectaSettingTab extends PluginSettingTab {
       const statusWord = reg?.probe.status === "hot" ? "enabled"
         : reg?.probe.status === "probing" ? "probing"
         : reg?.probe.status === "failed" ? `failed${reg.probe.error ? ` — ${reg.probe.error}` : ""}`
-        : reg?.whitelisted ? "enabled" : "not enabled";
+        : reg?.probe.status === "cold" ? "not probed yet"
+        : "not enabled";
       const row = new Setting(group).setName(s.name).setDesc(statusWord);
       row.addToggle((t) =>
         t.setValue(!!reg?.whitelisted).onChange(async (v) => {
@@ -228,10 +235,12 @@ export class PerspectaSettingTab extends PluginSettingTab {
         d.addOption("allow", "Always allow");
         d.addOption("ask", "Permission required");
         d.addOption("blocked", "Blocked");
-        if (!uniform) d.addOption("__custom__", "— Custom");
-        d.setValue(uniform ? groupDefault : "__custom__");
+        if (!uniform) d.addOption(GROUP_CUSTOM_SENTINEL, "— Custom");
+        d.setValue(uniform ? groupDefault : GROUP_CUSTOM_SENTINEL);
         d.onChange(async (v) => {
-          if (v === "__custom__") return;
+          if (v === GROUP_CUSTOM_SENTINEL) return;
+          // `reg` (captured at render) is safe: every mutation re-renders via
+          // renderMcpTab → el.empty(), so this closure can't fire against stale state.
           plugin.settings.mcpRegistry[serverName] = applyGroupPermission(reg, group, v as McpToolPermission);
           await plugin.saveSettings();
           await this.renderMcpTab(el);

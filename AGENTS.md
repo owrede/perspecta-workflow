@@ -7,6 +7,8 @@ ships a filesystem-agnostic core, an MCP server, and an Obsidian plugin.
 
 ## Source Map
 
+Detailed per-module map: `docs/CODE-MAP.md`.
+
 - `packages/core/` - canvas parsing, graph/linter/stepper, registry, skill generation.
 - `packages/mcp-server/` - MCP stdio server exposing workflow tools.
 - `packages/obsidian-plugin/` - Obsidian authoring UI, canvas marker, node coloring, settings, skill sync.

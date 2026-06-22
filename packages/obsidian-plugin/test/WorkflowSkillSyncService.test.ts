@@ -74,8 +74,6 @@ describe("WorkflowSkillSyncService.applySkillSyncPlan", () => {
         { path: ".claude/skills/dup/SKILL.md", content: "b" },
       ],
       deletes: [],
-      registryPath: "_agents/workflows/INDEX.md",
-      registryContent: "# index",
     });
     expect(notices.some((n) => n.includes("duplicate workflow name"))).toBe(true);
   });
@@ -86,10 +84,48 @@ describe("WorkflowSkillSyncService.applySkillSyncPlan", () => {
     await svc.applySkillSyncPlan({
       writes: [],
       deletes: [".claude/skills/old/SKILL.md"],
-      registryPath: "_agents/workflows/INDEX.md",
-      registryContent: "# index",
     });
     expect(io.files.has(".claude/skills/old/SKILL.md")).toBe(false);
+  });
+
+  it("writes no registry file (the INDEX.md model is gone)", async () => {
+    const { svc, io } = makeService();
+    await svc.applySkillSyncPlan({ writes: [], deletes: [] });
+    expect(io.files.has("_agents/workflows/INDEX.md")).toBe(false);
+  });
+});
+
+describe("WorkflowSkillSyncService.rebuildWorkflowSkills", () => {
+  const PFLOW = JSON.stringify({
+    pflowFormatVersion: 1,
+    workflow: { name: "person-brief", description: "Brief a person." },
+    nodes: [
+      {
+        id: "in", kind: "input", label: "In", inputs: [],
+        outputs: [{ id: "out:person", name: "person", schema: { type: "string" }, required: true }],
+      },
+      { id: "end", kind: "output", label: "Out", inputs: [{ id: "in:x", name: "x", schema: { type: "any" } }], outputs: [] },
+    ],
+    wires: [],
+  });
+
+  it("generates one skill per .pflow with the .pflow source path and args", async () => {
+    const { svc, io } = makeService();
+    io.files.set("_agents/person-brief.pflow", PFLOW);
+    const n = await svc.rebuildWorkflowSkills(["_agents/person-brief.pflow"]);
+    expect(n).toBe(1);
+    const skill = io.files.get(".claude/skills/person-brief/SKILL.md")!;
+    expect(skill).toContain("perspecta_source: _agents/person-brief.pflow");
+    expect(skill).toContain("`person` (string, required)");
+    expect(io.files.has("_agents/workflows/INDEX.md")).toBe(false);
+  });
+
+  it("skips an unparseable .pflow with a notice instead of throwing", async () => {
+    const { svc, io, notices } = makeService();
+    io.files.set("_agents/broken.pflow", "{ not json");
+    const n = await svc.rebuildWorkflowSkills(["_agents/broken.pflow"]);
+    expect(n).toBe(0);
+    expect(notices.some((m) => m.includes("broken.pflow"))).toBe(true);
   });
 });
 
@@ -98,7 +134,6 @@ describe("WorkflowSkillSyncService.agentInstallStatus", () => {
     const { svc } = makeService();
     const status = await svc.agentInstallStatus();
     expect(status.installedSkills).toBe(0);
-    expect(status.hasRegistry).toBe(false);
     expect(status.hasPointer).toBe(false);
   });
 

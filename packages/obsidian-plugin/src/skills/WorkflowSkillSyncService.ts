@@ -1,11 +1,9 @@
-import { VERSION, renderGenericSkill, summarizeWorkflow, isWorkflowCanvas, type WorkflowSummary } from "@perspecta/core";
+import { VERSION, renderGenericSkill, parsePflow, summarizePflowWorkflow, type PflowWorkflowSummary } from "@perspecta/core";
 import { decideGenericSkill } from "./reconcileGenericSkill.js";
-import { planWorkflowSkills, SKILLS_DIR, REGISTRY_PATH, type SkillSyncPlan } from "./syncWorkflowSkills.js";
+import { planWorkflowSkills, SKILLS_DIR, type SkillSyncPlan } from "./syncWorkflowSkills.js";
 import { upsertPointerBlock } from "./claudePointer.js";
 import { bundledSkillWrites } from "./bundledSkills.js";
-import { ObsidianFileSystem } from "../fs/ObsidianFileSystem.js";
 import { ancestorDirs } from "../fs/paths.js";
-import { preloadCanvas } from "../fs/preload.js";
 
 /**
  * The vault file operations the skill installer needs. Satisfied by Obsidian's
@@ -75,27 +73,14 @@ export class WorkflowSkillSyncService {
     }
   }
 
-  private async isMarkedCanvas(path: string): Promise<boolean> {
-    try {
-      return isWorkflowCanvas(JSON.parse(await this.io.read(path)));
-    } catch { return false; }
-  }
-
-  private reader() {
-    return {
-      read: (p: string) => this.io.read(p),
-      exists: (p: string) => this.io.exists(p),
-    };
-  }
-
-  /** Build a summary for every marked canvas. Best-effort per canvas. */
-  async collectWorkflowSummaries(canvasPaths: string[]): Promise<WorkflowSummary[]> {
-    const summaries: WorkflowSummary[] = [];
-    for (const path of canvasPaths) {
+  /** Build a summary for every `.pflow` document. Best-effort per file: a doc
+   *  that fails to parse is skipped with a notice, not fatal. */
+  async collectWorkflowSummaries(pflowPaths: string[]): Promise<PflowWorkflowSummary[]> {
+    const summaries: PflowWorkflowSummary[] = [];
+    for (const path of pflowPaths) {
       try {
-        if (!(await this.isMarkedCanvas(path))) continue;
-        const { map } = await preloadCanvas(path, this.reader());
-        summaries.push(summarizeWorkflow(path, new ObsidianFileSystem(map)));
+        const doc = parsePflow(await this.io.read(path));
+        summaries.push(summarizePflowWorkflow(path, doc));
       } catch (e) {
         this.notify(`Perspecta: skipped ${path} — ${(e as Error).message}`);
       }
@@ -119,14 +104,16 @@ export class WorkflowSkillSyncService {
     return out;
   }
 
-  /** Apply a sync plan: write per-workflow skills, prune orphans, write registry + pointer. */
+  /** Apply a sync plan: write per-workflow skills, prune orphans, update pointer.
+   *  No registry file is written (the INDEX.md model is gone). */
   async applySkillSyncPlan(plan: SkillSyncPlan): Promise<void> {
-    // Guard against silent data loss: two canvases with the same filename map to
-    // the same skill path. Warn rather than overwrite one silently.
+    // Guard against silent data loss: two .pflow docs declaring the same
+    // workflow.name map to the same skill path. Warn rather than overwrite one
+    // silently.
     const seen = new Set<string>();
     for (const w of plan.writes) {
       if (seen.has(w.path)) {
-        this.notify(`Perspecta: duplicate workflow name → ${w.path} (one will be overwritten; rename a canvas)`);
+        this.notify(`Perspecta: duplicate workflow name → ${w.path} (one will be overwritten; rename a workflow)`);
         console.warn(`Perspecta: duplicate skill path in sync plan: ${w.path}`);
       }
       seen.add(w.path);
@@ -137,17 +124,16 @@ export class WorkflowSkillSyncService {
     for (const d of plan.deletes) {
       try { await this.io.remove(d); } catch { /* already gone */ }
     }
-    await this.writeIfChanged(plan.registryPath, plan.registryContent);
 
     let existing = "";
     try { existing = await this.io.read(POINTER_PATH); } catch { existing = ""; }
     await this.writeIfChanged(POINTER_PATH, upsertPointerBlock(existing));
   }
 
-  /** Full regenerate: scan canvases → plan → apply. Best-effort; never throws. */
-  async rebuildWorkflowSkills(canvasPaths: string[]): Promise<number> {
+  /** Full regenerate: scan .pflow docs → plan → apply. Best-effort; never throws. */
+  async rebuildWorkflowSkills(pflowPaths: string[]): Promise<number> {
     try {
-      const summaries = await this.collectWorkflowSummaries(canvasPaths);
+      const summaries = await this.collectWorkflowSummaries(pflowPaths);
       const existing = await this.readExistingSkills();
       await this.applySkillSyncPlan(planWorkflowSkills(summaries, existing));
       return summaries.length;
@@ -158,13 +144,13 @@ export class WorkflowSkillSyncService {
   }
 
   /** User-facing install action for the settings Install tab. */
-  async installAgentSkills(canvasPaths: string[]): Promise<number> {
+  async installAgentSkills(pflowPaths: string[]): Promise<number> {
     await this.writeBundledSkills();
     await this.reconcileGenericSkill();
-    return this.rebuildWorkflowSkills(canvasPaths);
+    return this.rebuildWorkflowSkills(pflowPaths);
   }
 
-  async agentInstallStatus(): Promise<{ installedSkills: number; hasRegistry: boolean; hasPointer: boolean }> {
+  async agentInstallStatus(): Promise<{ installedSkills: number; hasPointer: boolean }> {
     let installedSkills = 0;
     for (const skill of bundledSkillWrites()) {
       if (await this.io.exists(skill.path)) installedSkills += 1;
@@ -172,11 +158,10 @@ export class WorkflowSkillSyncService {
     if (await this.io.exists(`${SKILLS_DIR}/perspecta-workflow/SKILL.md`)) {
       installedSkills += 1;
     }
-    const hasRegistry = await this.io.exists(REGISTRY_PATH);
     let hasPointer = false;
     try {
       hasPointer = (await this.io.read(POINTER_PATH)).includes(POINTER_MARKER);
     } catch { hasPointer = false; }
-    return { installedSkills, hasRegistry, hasPointer };
+    return { installedSkills, hasPointer };
   }
 }

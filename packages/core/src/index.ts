@@ -19,3 +19,4 @@ export * from "./pflow/mcp-registry.js";
 export * from "./pflow/contract.js";
 export * from "./codegen/emit-lint.js";
 export * from "./codegen/scriptgen.js";
+export * from "./codegen/check-export.js";

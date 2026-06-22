@@ -1,5 +1,15 @@
 import { readFlatFrontmatter } from "./frontmatter.js";
-import type { WorkflowSummary } from "./registry.js";
+import type { PflowDocument, Port } from "./pflow/schema.js";
+
+/** A workflow's identity for skill generation, derived from a parsed `.pflow`
+ *  document. Replaces the canvas-era WorkflowSummary: a `.pflow` carries its own
+ *  name/description/args, so there is no start-note to scrape. */
+export interface PflowWorkflowSummary {
+  name: string; // workflow.name
+  pflowPath: string; // vault-relative path to the .pflow document
+  description: string; // workflow.description (trigger + purpose in one)
+  args: { name: string; type: string; required: boolean }[]; // input-node args
+}
 
 /** Collapse a value to a single safe line for use in a YAML frontmatter scalar:
  *  newlines/CRs become spaces, runs of whitespace collapse, ends trimmed.
@@ -9,90 +19,99 @@ function sanitizeInline(value: string): string {
   return value.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/** Escape Markdown table cell delimiters so a `|` in user text doesn't
- *  introduce spurious columns. Also collapses newlines (a cell is one line). */
-function escapeCell(value: string): string {
-  return sanitizeInline(value).replace(/\|/g, "\\|");
-}
-
 /** Read a generated skill's flat frontmatter as `key: value` string pairs.
  *  Thin alias over the shared {@link readFlatFrontmatter}; the generated-skill
  *  marker (`perspecta_generated`/`perspecta_version`) drives pruning, so this
  *  must stay CRLF-tolerant — which the shared parser guarantees. */
 export const readSkillFrontmatter = readFlatFrontmatter;
 
-/** Per-workflow SKILL.md — thin: identity + trigger + canvas path + pointer. */
-export function renderWorkflowSkill(s: WorkflowSummary): string {
+/** A port's declared type as a short human label (string | number | array | …). */
+function portTypeLabel(port: Port): string {
+  return port.schema.type;
+}
+
+/** Build a PflowWorkflowSummary from a parsed `.pflow` document and its path.
+ *  The workflow's args are the output ports of its input node(s) — the values a
+ *  caller passes when running the exported script. Never throws. */
+export function summarizePflowWorkflow(pflowPath: string, doc: PflowDocument): PflowWorkflowSummary {
+  const args: PflowWorkflowSummary["args"] = [];
+  for (const node of doc.nodes) {
+    if (node.kind !== "input") continue;
+    for (const port of node.outputs) {
+      args.push({ name: port.name, type: portTypeLabel(port), required: port.required !== false });
+    }
+  }
+  return {
+    name: doc.workflow.name,
+    pflowPath,
+    description: doc.workflow.description,
+    args,
+  };
+}
+
+/** Render the args block for a per-workflow skill (markdown list, or a note that
+ *  the workflow takes no args). */
+function renderArgs(args: PflowWorkflowSummary["args"]): string {
+  if (args.length === 0) return "This workflow takes no arguments.";
+  const rows = args
+    .map((a) => `- \`${a.name}\` (${a.type}${a.required ? ", required" : ", optional"})`)
+    .join("\n");
+  return `Arguments:\n\n${rows}`;
+}
+
+/** Per-workflow SKILL.md — thin: identity + trigger + .pflow path + run pointer. */
+export function renderWorkflowSkill(s: PflowWorkflowSummary): string {
   return `---
 name: ${s.name}
-description: ${sanitizeInline(s.trigger)}
+description: ${sanitizeInline(s.description)}
 perspecta_generated: true
-perspecta_source: ${s.canvasPath}
+perspecta_source: ${s.pflowPath}
 ---
-Use the \`perspecta-workflow\` skill for how to walk a workflow. This one:
+Use the \`perspecta-workflow\` skill for the full run procedure. This workflow:
 
-1. Walk the canvas at \`${s.canvasPath}\` via MCP \`workflow_start(...)\`.
-2. If the perspecta-workflow MCP tools aren't connected this session,
-   read the canvas + node-notes and walk them manually.
+1. Is authored as the \`.pflow\` document at \`${s.pflowPath}\`.
+2. Runs via its exported script at \`.claude/workflows/${s.name}.js\`, passing the
+   arguments below. If that script does not exist yet, open the \`.pflow\` in the
+   Perspecta Workflow editor and use **Export** first.
+
+${renderArgs(s.args)}
 `;
 }
 
-/** The generated registry note listing every workflow. */
-export function renderRegistry(summaries: WorkflowSummary[]): string {
-  const header = `---
-generated_by: perspecta-workflow
----
-# Workflows
-
-`;
-  if (summaries.length === 0) {
-    return header + "_No workflows defined in this vault yet._\n";
-  }
-  const rows = summaries
-    .map((s) => `| ${escapeCell(s.name)} | ${escapeCell(s.purpose)} | ${escapeCell(s.trigger)} | ${s.nodeCount} | \`${s.canvasPath}\` |`)
-    .join("\n");
-  return (
-    header +
-    "| Name | Purpose | When to use | Nodes | Canvas |\n" +
-    "| --- | --- | --- | --- | --- |\n" +
-    rows +
-    "\n"
-  );
-}
-
-/** The plugin-owned generic skill, version-stamped. */
+/** The plugin-owned generic skill, version-stamped. Describes the `.pflow` →
+ *  export → run model; no canvas, no INDEX.md, no workflow_start. */
 export function renderGenericSkill(version: string): string {
   return `---
 name: perspecta-workflow
-description: Use when the user asks for a multi-step vault task that matches a defined Perspecta workflow, or asks to run/list workflows. Discovers and walks workflow canvases.
+description: Use when the user asks for a multi-step vault task that matches a defined Perspecta workflow, or asks to run/list workflows. Discovers .pflow workflows and runs their exported Claude Code scripts.
 perspecta_version: ${version}
 ---
 <!-- Generated by Perspecta Workflow v${version} — do not hand-edit; overwritten on plugin update. -->
 
 # Perspecta workflows
 
-This vault defines **Perspecta workflows**: Obsidian Canvas files walked as
-directed flowcharts from a start node to an end node. Each workflow also has its
-own generated skill (its \`description\` says when to use it) and is listed in
-\`_agents/workflows/INDEX.md\`.
-
-## Running a workflow
-
-1. Resolve the workflow to its canvas path (from the per-workflow skill's
-   \`perspecta_source\`, or from \`_agents/workflows/INDEX.md\`).
-2. Prefer the MCP tools when the \`perspecta-workflow\` server is connected:
-   - \`workflow_start(canvasPath)\` → a session id.
-   - \`workflow_current(session)\` → the current node's instruction + outgoing edges.
-   - \`workflow_advance(session, edge?, outputs?)\` → record outputs, follow an
-     edge (a label is required at a branch/loop).
-   - \`workflow_status(session)\` / \`workflow_context(session)\` to inspect progress.
-3. If the MCP tools are not available, read the canvas JSON and each node-note
-   directly and walk them: start at the \`start\` node, follow labeled edges, and
-   stop at the \`end\` node.
+This vault defines **Perspecta workflows** as \`.pflow\` documents under
+\`_agents/\` — typed node-and-wire graphs authored in a visual editor. Each
+\`.pflow\` is **compiled (exported)** to a native Claude Code dynamic-workflow
+script at \`.claude/workflows/<name>.js\`; that script is the runnable artifact.
+Each workflow also has its own generated skill (its \`description\` says when to
+use it).
 
 ## Listing workflows
 
-Read \`_agents/workflows/INDEX.md\` and present the Name / Purpose / When-to-use
-columns.
+List the \`.pflow\` files under \`_agents/\` and read each one's
+\`workflow.description\`. The per-workflow skills under \`.claude/skills/\` carry
+the same descriptions as their trigger text.
+
+## Running a workflow
+
+1. Match the task to a workflow's \`workflow.description\`.
+2. Run its exported script at \`.claude/workflows/<name>.js\`, passing the
+   workflow's \`args\` (listed in the per-workflow skill).
+3. If the exported script does not exist, the \`.pflow\` has not been exported
+   yet — open it in the Perspecta Workflow editor and use **Export** first.
+
+Never overwrite a \`.pflow\` document unless the user explicitly asks for
+authoring or repair.
 `;
 }

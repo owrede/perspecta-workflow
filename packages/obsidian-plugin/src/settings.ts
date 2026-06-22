@@ -69,15 +69,15 @@ export class PerspectaSettingTab extends PluginSettingTab {
             // Bundled static skills plus the generated generic workflow skill.
             const total = bundledSkillWrites().length + 1;
             renderInstallSection<number>(el, {
-              body: "Install or update the skills and workflow index that let agents discover and run Perspecta workflows in this vault.",
-              settingDesc: "Writes plugin-owned skills to .claude/skills, rebuilds _agents/workflows/INDEX.md, and updates the vault CLAUDE.md pointer block.",
+              body: "Install or update the skills that let agents discover and run Perspecta workflows in this vault.",
+              settingDesc: "Writes plugin-owned skills to .claude/skills (one per .pflow under _agents/) and updates the vault CLAUDE.md pointer block.",
               status: async () => {
                 const s = await this.plugin.agentInstallStatus();
-                return `Installed skills: ${s.installedSkills}/${total}. Registry: ${s.hasRegistry ? "yes" : "no"}. CLAUDE.md pointer: ${s.hasPointer ? "yes" : "no"}.`;
+                return `Installed skills: ${s.installedSkills}/${total}. CLAUDE.md pointer: ${s.hasPointer ? "yes" : "no"}.`;
               },
               install: () => this.plugin.installAgentSkills(),
               onInstalled: (count) => {
-                new Notice(`Perspecta Workflow: installed agent skills and indexed ${count} workflow${count === 1 ? "" : "s"}`);
+                new Notice(`Perspecta Workflow: installed agent skills for ${count} workflow${count === 1 ? "" : "s"}`);
               },
               onError: (err) => new Notice(`Perspecta Workflow: install failed - ${(err as Error).message}`),
             });

@@ -12,9 +12,13 @@ Use the plugin settings tab first:
 3. Open the `Install` tab.
 4. Run `Install / Update agent skills`.
 
-This writes plugin-owned files under `.claude/skills/`, generates
-`_agents/workflows/INDEX.md`, and updates the vault `CLAUDE.md` with a delimited
+This writes plugin-owned files under `.claude/skills/` (one generated skill per
+`.pflow` under `_agents/`) and updates the vault `CLAUDE.md` with a delimited
 Perspecta Workflow pointer block. It must not delete hand-authored skills.
+
+`.pflow` workflows are authored in the visual editor and live under `_agents/`.
+To make one runnable, open it in the editor and use **Export** to compile it to
+`.claude/workflows/<name>.js`.
 
 If working from the repo, use:
 

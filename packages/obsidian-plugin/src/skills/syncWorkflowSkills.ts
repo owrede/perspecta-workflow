@@ -1,15 +1,12 @@
-import { renderWorkflowSkill, renderRegistry, readSkillFrontmatter } from "@perspecta/core";
-import type { WorkflowSummary } from "@perspecta/core";
+import { renderWorkflowSkill, readSkillFrontmatter } from "@perspecta/core";
+import type { PflowWorkflowSummary } from "@perspecta/core";
 
 export const SKILLS_DIR = ".claude/skills";
-export const REGISTRY_PATH = "_agents/workflows/INDEX.md";
 
 export interface SkillWrite { path: string; content: string; }
 export interface SkillSyncPlan {
   writes: SkillWrite[];
   deletes: string[];
-  registryPath: string;
-  registryContent: string;
 }
 
 function skillPath(name: string): string {
@@ -17,12 +14,16 @@ function skillPath(name: string): string {
 }
 
 /**
- * Pure sync plan.
- * @param summaries  one per marked canvas (already extracted via summarizeWorkflow)
+ * Pure sync plan for `.pflow` workflows.
+ * @param summaries  one per discovered .pflow (via summarizePflowWorkflow)
  * @param existing   map of existing skill paths → file content (only SKILL.md files)
+ *
+ * No registry is emitted: discovery is by listing `_agents/*.pflow` plus the
+ * per-workflow skills' descriptions (the old `_agents/workflows/INDEX.md` model
+ * is gone).
  */
 export function planWorkflowSkills(
-  summaries: WorkflowSummary[],
+  summaries: PflowWorkflowSummary[],
   existing: Record<string, string>,
 ): SkillSyncPlan {
   const writes: SkillWrite[] = summaries.map((s) => ({
@@ -40,10 +41,5 @@ export function planWorkflowSkills(
     if (fm.perspecta_generated === "true") deletes.push(path);
   }
 
-  return {
-    writes,
-    deletes,
-    registryPath: REGISTRY_PATH,
-    registryContent: renderRegistry(summaries),
-  };
+  return { writes, deletes };
 }

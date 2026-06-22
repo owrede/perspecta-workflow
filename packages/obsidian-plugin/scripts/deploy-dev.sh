@@ -5,8 +5,8 @@
 #
 # By default it deploys to BOTH vaults the developer uses, so neither is ever
 # left on a stale build:
-#   - INIM-VM-TEST          (holds the real vault-memory contracts for smoke tests)
-#   - Intelligence Impact   (the vault the plugin is actually exercised in)
+#   - INIM-VM-TEST                (holds the real vault-memory contracts for smoke tests)
+#   - Intelligence Architecture   (the vault the plugin is actually exercised in; renamed from "Intelligence Impact")
 #
 # Overrides:
 #   PERSPECTA_VAULT_ROOTS      — ':'-separated list of vault roots (replaces the
@@ -26,7 +26,7 @@ PLUGIN_ID="$(node -e "console.log(require('$ROOT/manifest.json').id)")"
 # Default fleet of vaults to keep in sync. Add new vaults here.
 DEFAULT_VAULT_ROOTS=(
   "/Users/wrede/Documents/Obsidian Vaults/INIM-VM-TEST"
-  "/Users/wrede/Documents/Obsidian Vaults/Intelligence Impact"
+  "/Users/wrede/Documents/Obsidian Vaults/Intelligence Architecture"
 )
 
 # Resolve which vaults to target (precedence: single override > list override > default).

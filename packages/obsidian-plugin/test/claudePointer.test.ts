@@ -6,7 +6,7 @@ describe("upsertPointerBlock", () => {
     const out = upsertPointerBlock("# My Vault\n\nSome notes.\n");
     expect(out).toContain(POINTER_BEGIN);
     expect(out).toContain(POINTER_END);
-    expect(out).toContain("_agents/workflows/INDEX.md");
+    expect(out).toContain("`.pflow`");
     expect(out.startsWith("# My Vault")).toBe(true); // existing content preserved
   });
   it("replaces an existing block in place without duplicating", () => {

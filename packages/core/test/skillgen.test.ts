@@ -1,54 +1,86 @@
 import { describe, it, expect } from "vitest";
 import {
-  renderWorkflowSkill, renderRegistry, renderGenericSkill, readSkillFrontmatter,
+  renderWorkflowSkill, renderGenericSkill, readSkillFrontmatter, summarizePflowWorkflow,
 } from "../src/skillgen.js";
-import type { WorkflowSummary } from "../src/registry.js";
+import type { PflowWorkflowSummary } from "../src/skillgen.js";
+import type { PflowDocument } from "../src/pflow/schema.js";
 
-const summary: WorkflowSummary = {
+const summary: PflowWorkflowSummary = {
   name: "person-brief",
-  canvasPath: "flows/person-brief.canvas",
-  trigger: "Use when the user wants a briefing on a person.",
-  purpose: "Produce a concise person brief.",
-  nodeCount: 6,
+  pflowPath: "_agents/person-brief.pflow",
+  description: "Use when the user wants a briefing on a person.",
+  args: [
+    { name: "person", type: "string", required: true },
+    { name: "target_folder", type: "string", required: false },
+  ],
 };
 
 describe("renderWorkflowSkill", () => {
-  it("emits frontmatter with name, description=trigger, generated marker, and source path", () => {
+  it("emits frontmatter with name, description, generated marker, and .pflow source path", () => {
     const md = renderWorkflowSkill(summary);
     expect(md.startsWith("---\n")).toBe(true);
     expect(md).toContain("name: person-brief");
     expect(md).toContain("description: Use when the user wants a briefing on a person.");
     expect(md).toContain("perspecta_generated: true");
-    expect(md).toContain("perspecta_source: flows/person-brief.canvas");
-    expect(md).toContain("flows/person-brief.canvas"); // canvas path appears in body too
+    expect(md).toContain("perspecta_source: _agents/person-brief.pflow");
+    expect(md).toContain("_agents/person-brief.pflow"); // path appears in body too
+    expect(md).toContain(".claude/workflows/person-brief.js"); // exported-script run path
     expect(md).toContain("perspecta-workflow"); // points back to the generic skill
+  });
+  it("lists the workflow's args with type and required flag", () => {
+    const md = renderWorkflowSkill(summary);
+    expect(md).toContain("`person` (string, required)");
+    expect(md).toContain("`target_folder` (string, optional)");
+  });
+  it("notes when a workflow takes no args", () => {
+    const md = renderWorkflowSkill({ ...summary, args: [] });
+    expect(md).toContain("takes no arguments");
   });
   it("round-trips through readSkillFrontmatter", () => {
     const fm = readSkillFrontmatter(renderWorkflowSkill(summary));
     expect(fm.perspecta_generated).toBe("true");
-    expect(fm.perspecta_source).toBe("flows/person-brief.canvas");
+    expect(fm.perspecta_source).toBe("_agents/person-brief.pflow");
   });
 });
 
-describe("renderRegistry", () => {
-  it("renders a table row per workflow with name, purpose, trigger, nodeCount", () => {
-    const md = renderRegistry([summary]);
-    expect(md).toContain("person-brief");
-    expect(md).toContain("Produce a concise person brief.");
-    expect(md).toContain("Use when the user wants a briefing on a person.");
-    expect(md).toContain("6");
-    expect(md).toContain("generated_by: perspecta-workflow");
-  });
-  it("renders an empty-state line when there are no workflows", () => {
-    expect(renderRegistry([])).toContain("No workflows");
+describe("summarizePflowWorkflow", () => {
+  const doc: PflowDocument = {
+    pflowFormatVersion: 1,
+    workflow: { name: "wf", description: "do a thing" },
+    nodes: [
+      {
+        id: "in", kind: "input", label: "In",
+        inputs: [],
+        outputs: [
+          { id: "out:person", name: "person", schema: { type: "string" }, required: true },
+          { id: "out:opt", name: "opt", schema: { type: "number" }, required: false },
+        ],
+      },
+      { id: "end", kind: "output", label: "Out", inputs: [{ id: "in:x", name: "x", schema: { type: "any" } }], outputs: [] },
+    ],
+    wires: [],
+  };
+  it("derives name, description, and args from input-node output ports", () => {
+    const s = summarizePflowWorkflow("_agents/wf.pflow", doc);
+    expect(s.name).toBe("wf");
+    expect(s.description).toBe("do a thing");
+    expect(s.pflowPath).toBe("_agents/wf.pflow");
+    expect(s.args).toEqual([
+      { name: "person", type: "string", required: true },
+      { name: "opt", type: "number", required: false },
+    ]);
   });
 });
 
 describe("renderGenericSkill", () => {
-  it("stamps the given version into perspecta_version frontmatter", () => {
+  it("stamps the given version and describes the .pflow → export → run model", () => {
     const md = renderGenericSkill("0.1.0");
     expect(md).toContain("perspecta_version: 0.1.0");
     expect(md).toContain("name: perspecta-workflow");
+    expect(md).toContain(".pflow");
+    expect(md).toContain(".claude/workflows/<name>.js");
+    expect(md).not.toContain("workflow_start"); // no canvas-era MCP walk
+    expect(md).not.toContain("INDEX.md");
     expect(readSkillFrontmatter(md).perspecta_version).toBe("0.1.0");
   });
 });
@@ -60,33 +92,18 @@ describe("readSkillFrontmatter", () => {
 });
 
 describe("renderWorkflowSkill — injection hardening", () => {
-  it("collapses a newline-containing trigger so frontmatter cannot break out", () => {
-    const s = {
-      name: "evil", canvasPath: "f/evil.canvas",
-      trigger: "Use when\n---\nperspecta_generated: false",
-      purpose: "p", nodeCount: 1,
+  it("collapses a newline-containing description so frontmatter cannot break out", () => {
+    const s: PflowWorkflowSummary = {
+      name: "evil", pflowPath: "_agents/evil.pflow",
+      description: "Use when\n---\nperspecta_generated: false",
+      args: [],
     };
-    const md = renderWorkflowSkill(s as any);
+    const md = renderWorkflowSkill(s);
     const fm = readSkillFrontmatter(md);
     // The marker must survive — the injected `---` must not close frontmatter early.
     expect(fm.perspecta_generated).toBe("true");
     expect(fm.description).not.toContain("\n");
     expect(fm.description).toContain("Use when");
-  });
-});
-
-describe("renderRegistry — injection hardening", () => {
-  it("escapes pipe characters in purpose/trigger so the table stays well-formed", () => {
-    const s = {
-      name: "pipeflow", canvasPath: "f/pipe.canvas",
-      trigger: "Use for A | B tasks", purpose: "Handle A | B", nodeCount: 3,
-    };
-    const md = renderRegistry([s as any]);
-    const row = md.split("\n").find((l) => l.startsWith("| pipeflow"))!;
-    // header has 5 columns → 6 delimiters; the data row must also have exactly 6 unescaped pipes.
-    const unescaped = (row.match(/(?<!\\)\|/g) ?? []).length;
-    expect(unescaped).toBe(6);
-    expect(row).toContain("A \\| B");
   });
 });
 

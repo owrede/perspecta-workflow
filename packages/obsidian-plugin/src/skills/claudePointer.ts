@@ -2,9 +2,10 @@ export const POINTER_BEGIN = "<!-- perspecta-workflow:begin -->";
 export const POINTER_END = "<!-- perspecta-workflow:end -->";
 
 const BLOCK = `${POINTER_BEGIN}
-**Workflows:** This vault defines Perspecta workflows as skills and in
-\`_agents/workflows/INDEX.md\`. Before a multi-step task that matches a
-workflow's "when to use", offer to run it.
+**Workflows:** This vault defines Perspecta workflows as \`.pflow\` documents
+under \`_agents/\` and as generated skills under \`.claude/skills/\`. Before a
+multi-step task that matches a workflow's "when to use", offer to run it (see the
+\`perspecta-workflow\` skill).
 ${POINTER_END}`;
 
 /** Insert or replace the marked pointer block. Idempotent. */

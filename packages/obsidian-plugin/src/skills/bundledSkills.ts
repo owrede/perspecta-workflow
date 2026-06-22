@@ -2,18 +2,23 @@ import { SKILLS_DIR, type SkillWrite } from "./syncWorkflowSkills.js";
 
 const overview = `---
 name: perspecta-workflow-overview
-description: Use when the user asks what Perspecta Workflow does, how workflow canvases work, what files it writes, or how agents should discover workflow processes in an Obsidian vault.
+description: Use when the user asks what Perspecta Workflow does, how pflow workflows work, what files it writes, or how agents should discover workflow processes in an Obsidian vault.
 ---
 
 # Perspecta Workflow overview
 
-Perspecta Workflow turns marked Obsidian Canvas files into walkable agent
-workflows. Agents can discover workflows from \`_agents/workflows/INDEX.md\`
-and generated skills in \`.claude/skills/\`.
+Perspecta Workflow lets you author **\`.pflow\` workflows** — typed node-and-wire
+documents edited in a visual editor inside Obsidian. They live under \`_agents/\`
+(e.g. \`_agents/person-brief.pflow\`).
 
-Prefer MCP tools when connected. If MCP is unavailable, read the canvas JSON and
-node notes directly, start at the start node, follow labeled edges, and stop at
-the end node.
+A \`.pflow\` is **compiled (exported)** to a native Claude Code dynamic-workflow
+script at \`.claude/workflows/<name>.js\`; that script is the runnable artifact.
+Agents discover workflows by listing \`_agents/*.pflow\` and via the per-workflow
+skills under \`.claude/skills/\` (each skill's \`description\` says when to use it).
+
+To run one, run its exported \`.claude/workflows/<name>.js\` with the workflow's
+\`args\`. See the \`perspecta-workflow\` skill for the procedure (including
+exporting a \`.pflow\` that has not been exported yet).
 `;
 
 const install = `---
@@ -26,10 +31,14 @@ description: Use when the user asks to install, update, repair, or verify Perspe
 Open Obsidian settings, then Perspecta Workflow, then the Install tab. Run
 \`Install / Update agent skills\`.
 
-The install action writes plugin-owned skills under \`.claude/skills/\`,
-generates \`_agents/workflows/INDEX.md\`, and updates vault \`CLAUDE.md\` with a
-delimited Perspecta Workflow pointer block. It must not delete hand-authored
-skills.
+The install action writes plugin-owned skills under \`.claude/skills/\` (one
+generated skill per \`.pflow\` under \`_agents/\`) and updates vault \`CLAUDE.md\`
+with a delimited Perspecta Workflow pointer block. It must not delete
+hand-authored skills.
+
+\`.pflow\` workflows are authored in the visual editor and live under \`_agents/\`.
+To make one runnable, open it in the editor and use **Export** to compile it to
+\`.claude/workflows/<name>.js\`.
 
 For MCP setup, build \`packages/mcp-server/dist/server.js\` and register it as
 the \`perspecta-workflow\` MCP server in the agent client.
@@ -37,19 +46,20 @@ the \`perspecta-workflow\` MCP server in the agent client.
 
 const run = `---
 name: perspecta-workflow-run
-description: Use when the user asks to run, walk, list, or choose a Perspecta workflow from an Obsidian vault, including /perspecta:workflow or /ppa:workflow.
+description: Use when the user asks to run, list, or choose a Perspecta workflow from an Obsidian vault, including /perspecta:workflow or /ppa:workflow.
 ---
 
 # Run a Perspecta workflow
 
-1. Read \`_agents/workflows/INDEX.md\` to list workflows.
-2. Match the task to the workflow's purpose and trigger text.
-3. Prefer MCP tools: \`workflow_start\`, \`workflow_current\`,
-   \`workflow_advance\`, \`workflow_status\`, and \`workflow_context\`.
-4. If MCP tools are unavailable, read the canvas and node notes manually.
+1. List the \`.pflow\` files in \`_agents/\` to see the available workflows.
+2. Match the task to a workflow's \`workflow.description\`.
+3. Run it via its exported script at \`.claude/workflows/<name>.js\`, passing the
+   workflow's \`args\`. If that script does not exist, the \`.pflow\` has not been
+   exported yet — open it in the Perspecta Workflow editor and use **Export**
+   first. See the \`perspecta-workflow\` skill for the full procedure.
 
-Never overwrite workflow canvases or node notes unless the user explicitly asks
-for authoring or repair.
+Never overwrite a \`.pflow\` document unless the user explicitly asks for
+authoring or repair.
 `;
 
 export function bundledSkillWrites(): SkillWrite[] {

@@ -34,9 +34,9 @@ export default class PerspectaWorkflowPlugin extends Plugin {
   private menuDisposers = new Map<WorkspaceLeaf, () => void>();
   private skills!: WorkflowSkillSyncService;
 
-  /** Vault-relative paths of all canvas files (input to skill sync). */
-  private canvasPaths(): string[] {
-    return this.app.vault.getFiles().filter((f) => f.extension === "canvas").map((f) => f.path);
+  /** Vault-relative paths of all `.pflow` documents (input to skill sync). */
+  private pflowPaths(): string[] {
+    return this.app.vault.getFiles().filter((f) => f.extension === "pflow").map((f) => f.path);
   }
 
   async loadSettings() {
@@ -73,10 +73,10 @@ export default class PerspectaWorkflowPlugin extends Plugin {
 
   /** User-facing install action for the settings Install tab. */
   async installAgentSkills(): Promise<number> {
-    return this.skills.installAgentSkills(this.canvasPaths());
+    return this.skills.installAgentSkills(this.pflowPaths());
   }
 
-  agentInstallStatus(): Promise<{ installedSkills: number; hasRegistry: boolean; hasPointer: boolean }> {
+  agentInstallStatus(): Promise<{ installedSkills: number; hasPointer: boolean }> {
     return this.skills.agentInstallStatus();
   }
 
@@ -375,7 +375,7 @@ export default class PerspectaWorkflowPlugin extends Plugin {
       name: "Rebuild workflow skills",
       callback: async () => {
         await this.skills.reconcileGenericSkill();
-        const n = await this.skills.rebuildWorkflowSkills(this.canvasPaths());
+        const n = await this.skills.rebuildWorkflowSkills(this.pflowPaths());
         new Notice(`Perspecta: rebuilt ${n} workflow skill${n === 1 ? "" : "s"}`);
       },
     });

@@ -1,23 +1,19 @@
 ---
 name: perspecta-workflow-overview
-description: Use when the user asks what Perspecta Workflow does, how workflow canvases work, what files it writes, or how agents should discover workflow processes in an Obsidian vault.
+description: Use when the user asks what Perspecta Workflow does, how pflow workflows work, what files it writes, or how agents should discover workflow processes in an Obsidian vault.
 ---
 
 # Perspecta Workflow overview
 
-Perspecta Workflow turns marked Obsidian Canvas files into walkable agent
-workflows. Nodes point to Markdown notes with `WorkflowNode` frontmatter and are
-connected by directed, labeled edges.
+Perspecta Workflow lets you author **`.pflow` workflows** — typed node-and-wire
+documents edited in a visual editor inside Obsidian. They live under `_agents/`
+(e.g. `_agents/person-brief.pflow`).
 
-Key artifacts:
+A `.pflow` is **compiled (exported)** to a native Claude Code dynamic-workflow
+script at `.claude/workflows/<name>.js`; that script is the runnable artifact.
+Agents discover workflows by listing `_agents/*.pflow` and via the per-workflow
+skills under `.claude/skills/` (each skill's `description` says when to use it).
 
-- workflow canvases: `.canvas` files with a `perspecta.workflow` marker;
-- node notes: Markdown files with `class: WorkflowNode` and `node_type`;
-- generated workflow registry: `_agents/workflows/INDEX.md`;
-- generated skills: `.claude/skills/<workflow>/SKILL.md`;
-- generic workflow skill: `.claude/skills/perspecta-workflow/SKILL.md`.
-
-Agents should prefer the MCP server when connected. If MCP tools are unavailable,
-read the canvas JSON and node notes directly, start at the `start` node, follow
-labeled edges, and stop at the `end` node.
-
+To run one, run its exported `.claude/workflows/<name>.js` with the workflow's
+`args`. See the `perspecta-workflow` skill for the procedure (including exporting
+a `.pflow` that has not been exported yet).

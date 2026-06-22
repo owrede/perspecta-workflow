@@ -22,11 +22,10 @@ const fixtures = readdirSync(FIX)
  *  fixture will produce ZERO errors and the `still reproduces` assertion below
  *  will fail — a deliberate tripwire telling us to delete the exception. */
 const KNOWN_DEFECTS: Record<string, string[]> = {
-  // emitBranchRegion: a wire from a branch OUTPUT port into one of its own arm
-  // members resolves to the branch's verdict variable ("BRANCH: <label>") rather
-  // than the value that flowed through the gate. person-brief's `condense` arm
-  // therefore receives the routing token, not the draft to condense.
-  "person-brief-faithful.pflow": ["branch-arm-input-data"],
+  // (empty) — the branch-arm-input-data defect was fixed in sourceExpr: a wire
+  // from a branch/eval output port now resolves to the branch's pass-through
+  // input. Add an entry here only to track a NEW codegen defect the fidelity
+  // layer reports but that is not yet fixed in the emitter.
 };
 
 describe("checkExportFidelity: corpus is clean (modulo tracked defects)", () => {

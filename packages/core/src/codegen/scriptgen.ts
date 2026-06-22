@@ -102,6 +102,17 @@ export function sourceExpr(doc: PflowDocument, wire: { from: { nodeId: string; p
     const port = src.outputs.find((p) => p.id === wire.from.portId);
     if (port?.projection) return projectionExpr(varName(doc, src), port.projection);
   }
+  // Branch / eval node: a labelled output port carries the value that flowed
+  // THROUGH the gate, not the routing verdict. The node's own var holds only its
+  // "BRANCH: <label>" / "EVAL: pass" line — never data — so a consumer wired off
+  // an output port must read the branch's PASS-THROUGH input (its single wired
+  // source). This is the same pass-through value emitBranchRegion uses for an
+  // empty arm. Falls back to the verdict var only if the branch input is unwired
+  // (a malformed doc that validatePflow would already flag).
+  if (src.kind === "branch" || src.kind === "eval") {
+    const inWire = inWires(doc, src.id)[0];
+    if (inWire) return sourceExpr(doc, inWire);
+  }
   return varName(doc, src);
 }
 
